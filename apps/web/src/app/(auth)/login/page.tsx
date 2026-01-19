@@ -99,17 +99,17 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#E6F7FF] via-white to-[#E6F7FF] dark:from-[#1F2937] dark:via-[#374151] dark:to-[#1F2937] p-4">
       <div className="w-full max-w-md">
         {/* Logo and Title */}
         <div className="flex flex-col items-center mb-8">
-          <div className="flex items-center justify-center w-16 h-16 bg-primary rounded-xl mb-4">
-            <Ticket className="w-8 h-8 text-primary-foreground" />
+          <div className="flex items-center justify-center w-16 h-16 bg-[#0099FF] rounded-xl mb-4 shadow-lg">
+            <Ticket className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
+          <h1 className="text-2xl font-bold text-[#4A5568] dark:text-[#F9FAFB]">
             Seaversity Ticketing
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-sm text-[#6B7280] dark:text-[#D1D5DB] mt-1">
             Work Management System
           </p>
         </div>
