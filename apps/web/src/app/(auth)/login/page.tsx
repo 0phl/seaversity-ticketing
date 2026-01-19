@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { AlertCircle, Ticket, Eye, EyeOff } from "lucide-react";
+import { AlertCircle, Eye, EyeOff } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -103,11 +104,18 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo and Title */}
         <div className="flex flex-col items-center mb-8">
-          <div className="flex items-center justify-center w-16 h-16 bg-[#0099FF] rounded-xl mb-4 shadow-lg">
-            <Ticket className="w-8 h-8 text-white" />
+          <div className="mb-4">
+            <Image
+              src="/seaversity-logo.png"
+              alt="Seaversity Logo"
+              width={180}
+              height={60}
+              priority
+              className="h-auto w-auto"
+            />
           </div>
           <h1 className="text-2xl font-bold text-[#4A5568] dark:text-[#F9FAFB]">
-            Seaversity Ticketing
+            Ticketing System
           </h1>
           <p className="text-sm text-[#6B7280] dark:text-[#D1D5DB] mt-1">
             Work Management System
