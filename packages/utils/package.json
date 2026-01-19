@@ -12,11 +12,13 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "minio": "^8.0.6",
     "zod": "^3.22.4"
   },
   "devDependencies": {
     "@seaversity/eslint-config": "workspace:*",
     "@seaversity/typescript-config": "workspace:*",
+    "@types/minio": "^7.1.1",
     "typescript": "^5.3.3"
   }
 }

@@ -62,6 +62,9 @@ export async function GET(
           },
           orderBy: { startedAt: "desc" },
         },
+        attachments: {
+          orderBy: { createdAt: "desc" },
+        },
         activityLogs: {
           include: {
             user: {

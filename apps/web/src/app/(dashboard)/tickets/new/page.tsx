@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, Ticket, Loader2 } from "lucide-react";
+import { ArrowLeft, Ticket, Loader2, Paperclip } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "@/hooks/use-toast";
+import { FileUpload } from "@/components/shared";
 import {
   createTicketSchema,
   type CreateTicketInput,
@@ -44,6 +45,8 @@ export default function NewTicketPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
 
   const {
     register,
@@ -81,6 +84,72 @@ export default function NewTicketPage() {
     fetchCategories();
   }, []);
 
+  /**
+   * Upload pending files to a work item
+   */
+  const uploadPendingFiles = async (workItemId: string): Promise<number> => {
+    let successCount = 0;
+
+    for (const file of pendingFiles) {
+      try {
+        // Get presigned URL
+        const presignedResponse = await fetch(
+          `/api/uploads/presigned?` +
+            new URLSearchParams({
+              workItemId,
+              fileName: file.name,
+              fileSize: file.size.toString(),
+              mimeType: file.type,
+            })
+        );
+
+        if (!presignedResponse.ok) {
+          console.error(`Failed to get presigned URL for ${file.name}`);
+          continue;
+        }
+
+        const { presignedUrl, storageKey } = await presignedResponse.json();
+
+        // Upload to MinIO
+        const uploadResponse = await fetch(presignedUrl, {
+          method: "PUT",
+          body: file,
+          headers: {
+            "Content-Type": file.type,
+          },
+        });
+
+        if (!uploadResponse.ok) {
+          console.error(`Failed to upload ${file.name} to storage`);
+          continue;
+        }
+
+        // Save attachment metadata
+        const attachmentResponse = await fetch("/api/attachments", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            workItemId,
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType: file.type,
+            storageKey,
+          }),
+        });
+
+        if (attachmentResponse.ok) {
+          successCount++;
+        }
+      } catch (err) {
+        console.error(`Error uploading ${file.name}:`, err);
+      }
+    }
+
+    return successCount;
+  };
+
   const onSubmit = async (data: CreateTicketInput) => {
     setIsSubmitting(true);
     setError(null);
@@ -101,9 +170,22 @@ export default function NewTicketPage() {
 
       const ticket = await response.json();
 
+      // Upload pending files if any
+      let uploadedFilesCount = 0;
+      if (pendingFiles.length > 0) {
+        setIsUploadingFiles(true);
+        uploadedFilesCount = await uploadPendingFiles(ticket.id);
+        setIsUploadingFiles(false);
+      }
+
+      const fileMessage =
+        uploadedFilesCount > 0
+          ? ` with ${uploadedFilesCount} attachment(s)`
+          : "";
+
       toast({
         title: "Ticket Created",
-        description: `Ticket ${ticket.ticketNumber} has been created successfully.`,
+        description: `Ticket ${ticket.ticketNumber} has been created successfully${fileMessage}.`,
         variant: "success",
       });
 
@@ -119,6 +201,7 @@ export default function NewTicketPage() {
       });
     } finally {
       setIsSubmitting(false);
+      setIsUploadingFiles(false);
     }
   };
 
@@ -286,20 +369,43 @@ export default function NewTicketPage() {
               </p>
             </div>
 
+            {/* File Attachments */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Paperclip className="h-4 w-4" />
+                Attachments
+              </Label>
+              <FileUpload
+                onPendingFilesChange={setPendingFiles}
+                maxFiles={5}
+                disabled={isSubmitting || isUploadingFiles}
+              />
+              <p className="text-xs text-muted-foreground">
+                Optional. Attach up to 5 files (max 10MB each). Files will be uploaded after ticket creation.
+              </p>
+            </div>
+
             {/* Actions */}
             <div className="flex items-center gap-4 pt-4">
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting ? (
+              <Button type="submit" disabled={isSubmitting || isUploadingFiles}>
+                {isSubmitting || isUploadingFiles ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creating...
+                    {isUploadingFiles ? "Uploading files..." : "Creating..."}
                   </>
                 ) : (
-                  "Create Ticket"
+                  <>
+                    Create Ticket
+                    {pendingFiles.length > 0 && (
+                      <span className="ml-1 text-xs">
+                        ({pendingFiles.length} file{pendingFiles.length !== 1 ? "s" : ""})
+                      </span>
+                    )}
+                  </>
                 )}
               </Button>
               <Link href="/tickets">
-                <Button type="button" variant="outline" disabled={isSubmitting}>
+                <Button type="button" variant="outline" disabled={isSubmitting || isUploadingFiles}>
                   Cancel
                 </Button>
               </Link>

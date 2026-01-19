@@ -17,6 +17,7 @@ import {
   MessageSquare,
   PauseCircle,
   XCircle,
+  Paperclip,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import {
   Select,
@@ -41,6 +41,7 @@ import { CommentFeed } from "@/components/tickets/comment-feed";
 import { CommentForm } from "@/components/tickets/comment-form";
 import { TimerWidget } from "@/components/time-tracking/timer-widget";
 import { TimeLogTable } from "@/components/time-tracking/time-log-table";
+import { FileUpload, AttachmentList } from "@/components/shared";
 
 interface TicketUser {
   id: string;
@@ -86,6 +87,16 @@ interface TicketTimeLog {
   };
 }
 
+interface TicketAttachment {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  storageKey: string;
+  createdAt: string;
+  uploadedBy: string;
+}
+
 interface TicketDetail {
   id: string;
   ticketNumber: string;
@@ -103,6 +114,7 @@ interface TicketDetail {
   team: TicketTeam | null;
   comments: TicketComment[];
   timeLogs: TicketTimeLog[];
+  attachments: TicketAttachment[];
 }
 
 const statusColors: Record<string, string> = {
@@ -151,8 +163,24 @@ export default function TicketDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<string>("USER");
+  const [attachments, setAttachments] = useState<TicketAttachment[]>([]);
 
   const ticketId = params.id as string;
+
+  /**
+   * Fetch attachments for the ticket
+   */
+  const fetchAttachments = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/attachments?workItemId=${ticketId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setAttachments(data);
+      }
+    } catch (error) {
+      console.error("Error fetching attachments:", error);
+    }
+  }, [ticketId]);
 
   const fetchTicket = useCallback(async () => {
     try {
@@ -171,6 +199,10 @@ export default function TicketDetailPage() {
       }
       const data = await res.json();
       setTicket(data);
+      // Set attachments from ticket response if available
+      if (data.attachments) {
+        setAttachments(data.attachments);
+      }
     } catch (error) {
       console.error("Error fetching ticket:", error);
       toast({
@@ -182,6 +214,20 @@ export default function TicketDetailPage() {
       setIsLoading(false);
     }
   }, [ticketId, router, toast]);
+
+  /**
+   * Handle attachment upload completion - refresh attachments list
+   */
+  const handleUploadComplete = useCallback(() => {
+    fetchAttachments();
+  }, [fetchAttachments]);
+
+  /**
+   * Handle attachment deletion - remove from local state
+   */
+  const handleAttachmentDelete = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }, []);
 
   // Fetch current user session for role
   useEffect(() => {
@@ -365,6 +411,39 @@ export default function TicketDetailPage() {
                   No description provided.
                 </p>
               )}
+            </CardContent>
+          </Card>
+
+          {/* Attachments Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Paperclip className="h-5 w-5" />
+                Attachments ({attachments.length})
+              </CardTitle>
+              <CardDescription>
+                Files and screenshots attached to this ticket
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Existing Attachments */}
+              {attachments.length > 0 && (
+                <AttachmentList
+                  attachments={attachments}
+                  onDelete={handleAttachmentDelete}
+                  canDelete={canChangeStatus}
+                />
+              )}
+
+              {/* Upload New Files */}
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-medium mb-3">Add Attachments</h4>
+                <FileUpload
+                  workItemId={ticket.id}
+                  onUploadComplete={handleUploadComplete}
+                  maxFiles={5}
+                />
+              </div>
             </CardContent>
           </Card>
 

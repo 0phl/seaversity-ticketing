@@ -1,5 +1,8 @@
 // Shared utilities - Export all shared utility functions here
 
+// Re-export storage utilities
+export * from "./storage";
+
 /**
  * Format a date to a readable string
  */
