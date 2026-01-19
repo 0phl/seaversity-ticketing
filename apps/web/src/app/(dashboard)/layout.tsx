@@ -4,6 +4,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { SignOutButton } from "./dashboard/sign-out-button";
+import { TimerProvider } from "@/components/time-tracking/timer-provider";
 
 export default async function DashboardLayout({
   children,
@@ -15,6 +16,9 @@ export default async function DashboardLayout({
   if (!session?.user) {
     redirect("/login");
   }
+
+  // Only show timer for AGENT, MANAGER, ADMIN
+  const showTimer = ["AGENT", "MANAGER", "ADMIN"].includes(session.user.role);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -42,6 +46,9 @@ export default async function DashboardLayout({
           </div>
         </div>
       </header>
+
+      {/* Active Timer Bar (for AGENT/MANAGER/ADMIN) */}
+      {showTimer && <TimerProvider />}
 
       <div className="flex">
         {/* Sidebar */}

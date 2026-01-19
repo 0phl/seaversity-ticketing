@@ -39,6 +39,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { CommentFeed } from "@/components/tickets/comment-feed";
 import { CommentForm } from "@/components/tickets/comment-form";
+import { TimerWidget } from "@/components/time-tracking/timer-widget";
+import { TimeLogTable } from "@/components/time-tracking/time-log-table";
 
 interface TicketUser {
   id: string;
@@ -70,6 +72,20 @@ interface TicketComment {
   user: TicketUser;
 }
 
+interface TicketTimeLog {
+  id: string;
+  startedAt: string;
+  endedAt: string | null;
+  durationMins: number | null;
+  notes: string | null;
+  isRunning: boolean;
+  user: {
+    id: string;
+    name: string;
+    avatar: string | null;
+  };
+}
+
 interface TicketDetail {
   id: string;
   ticketNumber: string;
@@ -86,6 +102,7 @@ interface TicketDetail {
   category: TicketCategory | null;
   team: TicketTeam | null;
   comments: TicketComment[];
+  timeLogs: TicketTimeLog[];
 }
 
 const statusColors: Record<string, string> = {
@@ -310,6 +327,29 @@ export default function TicketDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Timer Widget (for AGENT/MANAGER/ADMIN) */}
+          {canChangeStatus && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Time Tracking
+                </CardTitle>
+                <CardDescription>
+                  Track time spent working on this ticket
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <TimerWidget
+                  workItemId={ticket.id}
+                  workItemTitle={ticket.title}
+                  workItemNumber={ticket.ticketNumber}
+                  workItemType="TICKET"
+                />
+              </CardContent>
+            </Card>
+          )}
+
           {/* Description Card */}
           <Card>
             <CardHeader>
@@ -505,6 +545,24 @@ export default function TicketDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Work Log Card (visible to AGENT/MANAGER/ADMIN) */}
+          {canChangeStatus && ticket.timeLogs.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Work Log
+                </CardTitle>
+                <CardDescription>
+                  Time logged on this ticket
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <TimeLogTable timeLogs={ticket.timeLogs} />
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

@@ -57,11 +57,10 @@ export async function GET(
         timeLogs: {
           include: {
             user: {
-              select: { id: true, name: true },
+              select: { id: true, name: true, avatar: true },
             },
           },
           orderBy: { startedAt: "desc" },
-          take: 10,
         },
         activityLogs: {
           include: {
