@@ -1,0 +1,23 @@
+{
+  "name": "@seaversity/eslint-config",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "next.js"
+  ],
+  "exports": {
+    ".": "./index.js",
+    "./next": "./next.js"
+  },
+  "dependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.19.1",
+    "@typescript-eslint/parser": "^6.19.1",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-import": "^2.29.1"
+  },
+  "peerDependencies": {
+    "eslint": "^8.56.0"
+  }
+}
