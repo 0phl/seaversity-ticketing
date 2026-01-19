@@ -39,6 +39,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { CommentFeed } from "@/components/tickets/comment-feed";
 import { CommentForm } from "@/components/tickets/comment-form";
+import { AssignmentControls } from "@/components/tickets/assignment-controls";
 import { TimerWidget } from "@/components/time-tracking/timer-widget";
 import { TimeLogTable } from "@/components/time-tracking/time-log-table";
 import { FileUpload, AttachmentList } from "@/components/shared";
@@ -163,6 +164,7 @@ export default function TicketDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [currentUserRole, setCurrentUserRole] = useState<string>("USER");
+  const [currentUserId, setCurrentUserId] = useState<string>("");
   const [attachments, setAttachments] = useState<TicketAttachment[]>([]);
 
   const ticketId = params.id as string;
@@ -229,15 +231,16 @@ export default function TicketDetailPage() {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   }, []);
 
-  // Fetch current user session for role
+  // Fetch current user session for role and ID
   useEffect(() => {
     async function fetchSession() {
       try {
         const res = await fetch("/api/auth/session");
         if (res.ok) {
           const session = await res.json();
-          if (session?.user?.role) {
-            setCurrentUserRole(session.user.role);
+          if (session?.user) {
+            setCurrentUserRole(session.user.role || "USER");
+            setCurrentUserId(session.user.id || "");
           }
         }
       } catch (error) {
@@ -480,6 +483,19 @@ export default function TicketDetailPage() {
 
         {/* Sidebar */}
         <div className="space-y-6">
+          {/* Assignment Controls (for AGENT/MANAGER/ADMIN) */}
+          {canChangeStatus && (
+            <AssignmentControls
+              ticketId={ticket.id}
+              ticketNumber={ticket.ticketNumber}
+              currentAssigneeId={ticket.assignee?.id || null}
+              currentTeamId={ticket.team?.id || null}
+              currentUserRole={currentUserRole}
+              currentUserId={currentUserId}
+              onAssignmentChange={fetchTicket}
+            />
+          )}
+
           {/* Details Card */}
           <Card>
             <CardHeader>
