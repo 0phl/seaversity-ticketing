@@ -1,9 +1,44 @@
 import { PrismaClient, Role, Priority } from "@prisma/client";
+import * as bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
+async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 12);
+}
+
 async function main() {
   console.log("🌱 Seeding database...");
+
+  // Create default admin user
+  const adminPassword = await hashPassword("admin123");
+  const admin = await prisma.user.upsert({
+    where: { email: "admin@seaversity.edu" },
+    update: {},
+    create: {
+      email: "admin@seaversity.edu",
+      name: "System Administrator",
+      password: adminPassword,
+      role: "ADMIN",
+      isActive: true,
+    },
+  });
+  console.log(`✅ Created admin user: ${admin.email}`);
+
+  // Create test agent user
+  const agentPassword = await hashPassword("agent123");
+  const agent = await prisma.user.upsert({
+    where: { email: "agent@seaversity.edu" },
+    update: {},
+    create: {
+      email: "agent@seaversity.edu",
+      name: "Test Agent",
+      password: agentPassword,
+      role: "AGENT",
+      isActive: true,
+    },
+  });
+  console.log(`✅ Created agent user: ${agent.email}`);
 
   // Create default SLA policies
   const slaPolicies = await Promise.all([
@@ -110,6 +145,10 @@ async function main() {
   console.log(`✅ Created ${categories.length} categories`);
 
   console.log("🎉 Seeding completed!");
+  console.log("");
+  console.log("📝 Test credentials:");
+  console.log("   Admin: admin@seaversity.edu / admin123");
+  console.log("   Agent: agent@seaversity.edu / agent123");
 }
 
 main()

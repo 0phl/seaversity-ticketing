@@ -1,12 +1,12 @@
 import type { Config } from "tailwindcss";
 import sharedConfig from "@seaversity/tailwind-config";
 
-const config: Pick<Config, "content" | "presets"> = {
+const config: Config = {
   content: [
     "./src/**/*.{js,ts,jsx,tsx,mdx}",
     "../../packages/ui/src/**/*.{js,ts,jsx,tsx,mdx}",
   ],
-  presets: [sharedConfig],
+  presets: [sharedConfig as Config],
 };
 
 export default config;

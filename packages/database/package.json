@@ -18,10 +18,12 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@prisma/client": "^5.8.1"
+    "@prisma/client": "^5.8.1",
+    "bcryptjs": "^2.4.3"
   },
   "devDependencies": {
     "@seaversity/typescript-config": "workspace:*",
+    "@types/bcryptjs": "^2.4.6",
     "prisma": "^5.8.1",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
