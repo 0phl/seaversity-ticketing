@@ -11,6 +11,7 @@ import {
   BarChart3,
   Settings,
   Users,
+  MonitorDot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,12 @@ const navItems: NavItem[] = [
     title: "Dashboard",
     href: "/dashboard",
     icon: LayoutDashboard,
+  },
+  {
+    title: "Manager View",
+    href: "/manager",
+    icon: MonitorDot,
+    roles: ["ADMIN", "MANAGER"],
   },
   {
     title: "Tickets",
