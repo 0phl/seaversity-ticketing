@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Clock, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -89,12 +89,12 @@ function TeamMemberCard({ member }: { member: TeamMember }) {
     >
       {/* Avatar with status indicator */}
       <div className="relative">
-        <Avatar className="h-10 w-10">
-          <AvatarImage src={member.avatar || undefined} alt={member.name} />
-          <AvatarFallback className="bg-primary/10 text-primary text-sm">
-            {getInitials(member.name)}
-          </AvatarFallback>
-        </Avatar>
+        <Avatar
+          src={member.avatar}
+          alt={member.name}
+          fallback={member.name}
+          size="md"
+        />
         <span
           className={cn(
             "absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-background",

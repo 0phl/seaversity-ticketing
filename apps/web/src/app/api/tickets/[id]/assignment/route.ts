@@ -86,6 +86,14 @@ export async function PATCH(
       select: { name: true },
     });
 
+    // Check if user exists in database (might have old session after DB reset)
+    if (!currentUser) {
+      return NextResponse.json(
+        { error: "Your session is invalid. Please log out and log back in." },
+        { status: 401 }
+      );
+    }
+
     // Handle claim ticket (AGENT claiming - adds to assignees list)
     if (claimTicket) {
       if (!isAgent && !isManagerOrAdmin) {
@@ -96,7 +104,7 @@ export async function PATCH(
       }
 
       // Check if user is already assigned
-      const isAlreadyAssigned = existingTicket.assignees.some(
+      const isAlreadyAssigned = (existingTicket.assignees || []).some(
         (a) => a.userId === userId
       );
 
@@ -176,7 +184,7 @@ export async function PATCH(
         }
 
         // Clear all individual assignees when assigning to team
-        const previousAssignees = existingTicket.assignees.map(
+        const previousAssignees = (existingTicket.assignees || []).map(
           (a) => a.user.name
         );
 
@@ -225,7 +233,7 @@ export async function PATCH(
 
       await prisma.$transaction(async (tx) => {
         // Get current assignee IDs
-        const currentAssigneeIds = existingTicket.assignees.map((a) => a.userId);
+        const currentAssigneeIds = (existingTicket.assignees || []).map((a) => a.userId);
 
         // Calculate added and removed
         const addedIds = newAssigneeIds.filter(
@@ -244,7 +252,7 @@ export async function PATCH(
               })
             : [];
 
-        const removedUsers = existingTicket.assignees
+        const removedUsers = (existingTicket.assignees || [])
           .filter((a) => removedIds.includes(a.userId))
           .map((a) => a.user.name);
 
@@ -423,8 +431,10 @@ export async function PATCH(
     );
   } catch (error) {
     console.error("Error updating ticket assignment:", error);
+    // Return more detailed error in development
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to update ticket assignment" },
+      { error: "Failed to update ticket assignment", details: errorMessage },
       { status: 500 }
     );
   }

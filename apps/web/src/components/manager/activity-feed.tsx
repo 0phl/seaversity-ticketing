@@ -1,7 +1,7 @@
 "use client";
 
 import { formatDistanceToNow } from "date-fns";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   MessageSquare,
@@ -117,12 +117,13 @@ function ActivityItemCard({ item }: { item: ActivityItem }) {
   return (
     <div className="flex gap-3 p-3 hover:bg-muted/50 transition-colors">
       {/* User Avatar */}
-      <Avatar className="h-8 w-8 flex-shrink-0">
-        <AvatarImage src={item.user.avatar || undefined} alt={item.user.name} />
-        <AvatarFallback className="bg-primary/10 text-primary text-xs">
-          {getInitials(item.user.name)}
-        </AvatarFallback>
-      </Avatar>
+      <Avatar
+        src={item.user.avatar}
+        alt={item.user.name}
+        fallback={item.user.name}
+        size="sm"
+        className="flex-shrink-0"
+      />
 
       {/* Content */}
       <div className="flex-1 min-w-0 space-y-1">
