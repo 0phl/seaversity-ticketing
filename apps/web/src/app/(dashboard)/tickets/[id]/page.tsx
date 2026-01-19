@@ -98,6 +98,13 @@ interface TicketAttachment {
   uploadedBy: string;
 }
 
+interface TicketAssignee {
+  id: string;
+  userId: string;
+  assignedAt: string;
+  user: TicketUser;
+}
+
 interface TicketDetail {
   id: string;
   ticketNumber: string;
@@ -109,8 +116,10 @@ interface TicketDetail {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  assignmentMode: string | null;
   creator: TicketUser;
   assignee: TicketUser | null;
+  assignees: TicketAssignee[];
   category: TicketCategory | null;
   team: TicketTeam | null;
   comments: TicketComment[];
@@ -490,6 +499,8 @@ export default function TicketDetailPage() {
               ticketNumber={ticket.ticketNumber}
               currentAssigneeId={ticket.assignee?.id || null}
               currentTeamId={ticket.team?.id || null}
+              currentAssignmentMode={ticket.assignmentMode || null}
+              currentAssignees={ticket.assignees || []}
               currentUserRole={currentUserRole}
               currentUserId={currentUserId}
               onAssignmentChange={fetchTicket}
@@ -518,35 +529,49 @@ export default function TicketDetailPage() {
                 </div>
               </div>
 
-              {/* Assignee */}
-              <div className="flex items-center gap-3">
-                {ticket.assignee ? (
-                  <>
+              {/* Assignees */}
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Assigned to</p>
+                {ticket.assignees && ticket.assignees.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {ticket.assignees.map((assignee) => (
+                      <div
+                        key={assignee.id}
+                        className="flex items-center gap-2 bg-primary/10 rounded-full px-2 py-1"
+                      >
+                        <Avatar
+                          src={assignee.user.avatar}
+                          alt={assignee.user.name}
+                          fallback={assignee.user.name}
+                          size="xs"
+                        />
+                        <span className="text-sm font-medium text-primary">
+                          {assignee.user.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : ticket.assignee ? (
+                  <div className="flex items-center gap-2">
                     <Avatar
                       src={ticket.assignee.avatar}
                       alt={ticket.assignee.name}
                       fallback={ticket.assignee.name}
                       size="sm"
                     />
-                    <div className="min-w-0">
-                      <p className="text-xs text-muted-foreground">Assigned to</p>
-                      <p className="text-sm font-medium truncate">
-                        {ticket.assignee.name}
-                      </p>
-                    </div>
-                  </>
+                    <span className="text-sm font-medium">
+                      {ticket.assignee.name}
+                    </span>
+                  </div>
                 ) : (
-                  <>
+                  <div className="flex items-center gap-2">
                     <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
                       <User className="h-4 w-4 text-muted-foreground" />
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Assigned to</p>
-                      <p className="text-sm text-muted-foreground italic">
-                        Unassigned
-                      </p>
-                    </div>
-                  </>
+                    <span className="text-sm text-muted-foreground italic">
+                      Unassigned
+                    </span>
+                  </div>
                 )}
               </div>
 

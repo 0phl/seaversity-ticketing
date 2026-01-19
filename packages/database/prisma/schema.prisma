@@ -80,9 +80,10 @@ model User {
   updatedAt   DateTime  @updatedAt
 
   // Relations
-  managedTeam        Team?          @relation("TeamManager")
-  assignedWorkItems  WorkItem[]     @relation("AssignedWorkItems")
-  createdWorkItems   WorkItem[]     @relation("CreatedWorkItems")
+  managedTeam        Team?               @relation("TeamManager")
+  assignedWorkItems  WorkItem[]          @relation("AssignedWorkItems")
+  createdWorkItems   WorkItem[]          @relation("CreatedWorkItems")
+  workItemAssignees  WorkItemAssignee[]  // Multi-user assignment relation
   timeLogs           TimeLog[]
   comments           Comment[]
   dailySummaries     DailySummary[]
@@ -125,15 +126,18 @@ model WorkItem {
   status         Status       @default(OPEN)
   priority       Priority     @default(MEDIUM)
 
-  // Assignment
+  // Legacy single assignment (kept for backward compatibility)
   assigneeId String?
   assignee   User?   @relation("AssignedWorkItems", fields: [assigneeId], references: [id])
+
+  // Multi-user assignment mode: "team" | "individuals" | null
+  assignmentMode String?
 
   // Creator
   creatorId String
   creator   User   @relation("CreatedWorkItems", fields: [creatorId], references: [id])
 
-  // Team association
+  // Team association (primary routing)
   teamId String?
   team   Team?   @relation(fields: [teamId], references: [id])
 
@@ -155,6 +159,7 @@ model WorkItem {
   updatedAt DateTime @updatedAt
 
   // Relations
+  assignees    WorkItemAssignee[]  // Multi-user assignments
   comments     Comment[]
   attachments  Attachment[]
   timeLogs     TimeLog[]
@@ -178,7 +183,25 @@ model WorkItem {
   @@index([createdAt])
   @@index([dueDate])
   @@index([priority])
+  @@index([assignmentMode])
   @@map("work_items")
+}
+
+/// WorkItemAssignee model - Join table for multi-user assignments
+/// Allows multiple users to be assigned to a single work item
+model WorkItemAssignee {
+  id         String   @id @default(cuid())
+  workItemId String
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  assignedAt DateTime @default(now())
+  assignedBy String?  // User ID who made the assignment
+
+  @@unique([workItemId, userId])
+  @@index([workItemId])
+  @@index([userId])
+  @@map("work_item_assignees")
 }
 
 /// Project model - Groups related work items together

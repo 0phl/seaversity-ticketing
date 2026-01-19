@@ -5,14 +5,24 @@ import { z } from "zod";
 
 // Validation schema for assignment updates
 const assignmentSchema = z.object({
-  assigneeId: z.string().nullable().optional(),
+  // Assignment mode: "team" or "individuals"
+  assignmentMode: z.enum(["team", "individuals"]).optional(),
+  // For team assignment
   teamId: z.string().nullable().optional(),
-  claimTicket: z.boolean().optional(), // Special flag for agents claiming a ticket
+  // For multi-user assignment (array of user IDs)
+  assigneeIds: z.array(z.string()).optional(),
+  // Legacy single assignee (backward compatible)
+  assigneeId: z.string().nullable().optional(),
+  // Special flag for agents claiming a ticket (adds to assignees)
+  claimTicket: z.boolean().optional(),
 });
 
 /**
  * PATCH /api/tickets/[id]/assignment - Update ticket assignment
- * Handles team assignment, user assignment, and claim functionality
+ * Supports:
+ * - Team assignment (clears individual assignees)
+ * - Multi-user assignment (clears team assignment)
+ * - Agent claiming (adds to assignees list)
  */
 export async function PATCH(
   request: NextRequest,
@@ -38,9 +48,10 @@ export async function PATCH(
       );
     }
 
-    const { assigneeId, teamId, claimTicket } = validatedFields.data;
+    const { assignmentMode, teamId, assigneeIds, assigneeId, claimTicket } =
+      validatedFields.data;
 
-    // Find the existing ticket
+    // Find the existing ticket with assignees
     const existingTicket = await prisma.workItem.findUnique({
       where: { id: ticketId, type: "TICKET" },
       include: {
@@ -49,6 +60,13 @@ export async function PATCH(
         },
         team: {
           select: { id: true, name: true },
+        },
+        assignees: {
+          include: {
+            user: {
+              select: { id: true, name: true },
+            },
+          },
         },
       },
     });
@@ -62,7 +80,13 @@ export async function PATCH(
     const isManagerOrAdmin = ["MANAGER", "ADMIN"].includes(userRole);
     const isAgent = userRole === "AGENT";
 
-    // Handle claim ticket (AGENT claiming an unassigned ticket)
+    // Get current user's name for activity log
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true },
+    });
+
+    // Handle claim ticket (AGENT claiming - adds to assignees list)
     if (claimTicket) {
       if (!isAgent && !isManagerOrAdmin) {
         return NextResponse.json(
@@ -71,50 +95,60 @@ export async function PATCH(
         );
       }
 
-      if (existingTicket.assigneeId) {
+      // Check if user is already assigned
+      const isAlreadyAssigned = existingTicket.assignees.some(
+        (a) => a.userId === userId
+      );
+
+      if (isAlreadyAssigned) {
         return NextResponse.json(
-          { error: "Ticket is already assigned" },
+          { error: "You are already assigned to this ticket" },
           { status: 400 }
         );
       }
 
-      // Get current user's name for activity log
-      const currentUser = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { name: true },
+      // Add user to assignees using transaction
+      await prisma.$transaction(async (tx) => {
+        // Add to assignees
+        await tx.workItemAssignee.create({
+          data: {
+            workItemId: ticketId,
+            userId,
+            assignedBy: userId,
+          },
+        });
+
+        // Update ticket status and assignment mode
+        await tx.workItem.update({
+          where: { id: ticketId },
+          data: {
+            status: existingTicket.status === "OPEN" ? "IN_PROGRESS" : existingTicket.status,
+            assignmentMode: "individuals",
+            // Clear team assignment when claiming
+            teamId: null,
+          },
+        });
+
+        // Create activity log
+        await tx.activityLog.create({
+          data: {
+            workItemId: ticketId,
+            userId,
+            action: "TICKET_CLAIMED",
+            changes: {
+              assigneeAdded: currentUser?.name,
+              status:
+                existingTicket.status === "OPEN"
+                  ? { from: "OPEN", to: "IN_PROGRESS" }
+                  : null,
+              message: `${currentUser?.name} claimed ${existingTicket.ticketNumber}`,
+            },
+          },
+        });
       });
 
-      // Claim the ticket: assign to current user and set status to IN_PROGRESS
-      const updatedTicket = await prisma.workItem.update({
-        where: { id: ticketId },
-        data: {
-          assigneeId: userId,
-          status: "IN_PROGRESS",
-        },
-        include: {
-          assignee: {
-            select: { id: true, name: true, email: true, avatar: true, role: true },
-          },
-          team: {
-            select: { id: true, name: true, color: true },
-          },
-        },
-      });
-
-      // Create activity log for claiming
-      await prisma.activityLog.create({
-        data: {
-          workItemId: ticketId,
-          userId,
-          action: "TICKET_CLAIMED",
-          changes: {
-            assigneeId: { from: null, to: userId },
-            status: { from: existingTicket.status, to: "IN_PROGRESS" },
-            message: `${currentUser?.name} claimed ${existingTicket.ticketNumber}`,
-          },
-        },
-      });
-
+      // Fetch updated ticket
+      const updatedTicket = await getTicketWithAssignees(ticketId);
       return NextResponse.json(updatedTicket);
     }
 
@@ -126,137 +160,267 @@ export async function PATCH(
       );
     }
 
-    // Build update data and track changes
-    const updateData: Record<string, unknown> = {};
-    const changes: Record<string, { from: unknown; to: unknown }> = {};
-    const activityMessages: string[] = [];
-
-    // Get current user's name for activity log
-    const currentUser = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { name: true },
-    });
-
-    // Handle team assignment
-    if (teamId !== undefined) {
+    // Handle TEAM assignment (mutual exclusivity - clears individual assignees)
+    if (assignmentMode === "team" || teamId !== undefined) {
       const newTeamId = teamId === "" || teamId === null ? null : teamId;
-      
-      if (newTeamId !== existingTicket.teamId) {
-        updateData.teamId = newTeamId;
-        
+
+      await prisma.$transaction(async (tx) => {
         // Get team name for activity log
         let newTeamName = "Unassigned";
         if (newTeamId) {
-          const newTeam = await prisma.team.findUnique({
+          const newTeam = await tx.team.findUnique({
             where: { id: newTeamId },
             select: { name: true },
           });
           newTeamName = newTeam?.name || "Unknown Team";
         }
 
-        changes.teamId = {
-          from: existingTicket.team?.name || null,
-          to: newTeamName !== "Unassigned" ? newTeamName : null,
-        };
-        
-        activityMessages.push(
-          newTeamId
-            ? `${currentUser?.name} assigned ${existingTicket.ticketNumber} to team ${newTeamName}`
-            : `${currentUser?.name} removed team assignment from ${existingTicket.ticketNumber}`
+        // Clear all individual assignees when assigning to team
+        const previousAssignees = existingTicket.assignees.map(
+          (a) => a.user.name
         );
-      }
+
+        await tx.workItemAssignee.deleteMany({
+          where: { workItemId: ticketId },
+        });
+
+        // Update ticket with team assignment
+        await tx.workItem.update({
+          where: { id: ticketId },
+          data: {
+            teamId: newTeamId,
+            assignmentMode: newTeamId ? "team" : null,
+            assigneeId: null, // Clear legacy field
+          },
+        });
+
+        // Create activity log
+        await tx.activityLog.create({
+          data: {
+            workItemId: ticketId,
+            userId,
+            action: "TICKET_ASSIGNED",
+            changes: {
+              teamId: {
+                from: existingTicket.team?.name || null,
+                to: newTeamId ? newTeamName : null,
+              },
+              assigneesRemoved:
+                previousAssignees.length > 0 ? previousAssignees : null,
+              message: newTeamId
+                ? `${currentUser?.name} assigned ${existingTicket.ticketNumber} to team ${newTeamName}`
+                : `${currentUser?.name} removed team assignment from ${existingTicket.ticketNumber}`,
+            },
+          },
+        });
+      });
+
+      const updatedTicket = await getTicketWithAssignees(ticketId);
+      return NextResponse.json(updatedTicket);
     }
 
-    // Handle user assignment
-    if (assigneeId !== undefined) {
-      const newAssigneeId = assigneeId === "" || assigneeId === null ? null : assigneeId;
-      
-      if (newAssigneeId !== existingTicket.assigneeId) {
-        updateData.assigneeId = newAssigneeId;
+    // Handle INDIVIDUALS assignment (mutual exclusivity - clears team)
+    if (assignmentMode === "individuals" || assigneeIds !== undefined) {
+      const newAssigneeIds = assigneeIds || [];
 
+      await prisma.$transaction(async (tx) => {
+        // Get current assignee IDs
+        const currentAssigneeIds = existingTicket.assignees.map((a) => a.userId);
+
+        // Calculate added and removed
+        const addedIds = newAssigneeIds.filter(
+          (id) => !currentAssigneeIds.includes(id)
+        );
+        const removedIds = currentAssigneeIds.filter(
+          (id) => !newAssigneeIds.includes(id)
+        );
+
+        // Get names for activity log
+        const addedUsers =
+          addedIds.length > 0
+            ? await tx.user.findMany({
+                where: { id: { in: addedIds } },
+                select: { id: true, name: true },
+              })
+            : [];
+
+        const removedUsers = existingTicket.assignees
+          .filter((a) => removedIds.includes(a.userId))
+          .map((a) => a.user.name);
+
+        // Remove users no longer assigned
+        if (removedIds.length > 0) {
+          await tx.workItemAssignee.deleteMany({
+            where: {
+              workItemId: ticketId,
+              userId: { in: removedIds },
+            },
+          });
+
+          // Create activity log for each removed user
+          for (const removedName of removedUsers) {
+            await tx.activityLog.create({
+              data: {
+                workItemId: ticketId,
+                userId,
+                action: "ASSIGNEE_REMOVED",
+                changes: {
+                  assigneeRemoved: removedName,
+                  message: `${currentUser?.name} removed ${removedName} from ${existingTicket.ticketNumber}`,
+                },
+              },
+            });
+          }
+        }
+
+        // Add new users
+        if (addedIds.length > 0) {
+          await tx.workItemAssignee.createMany({
+            data: addedIds.map((id) => ({
+              workItemId: ticketId,
+              userId: id,
+              assignedBy: userId,
+            })),
+          });
+
+          // Create activity log for each added user
+          for (const addedUser of addedUsers) {
+            await tx.activityLog.create({
+              data: {
+                workItemId: ticketId,
+                userId,
+                action: "ASSIGNEE_ADDED",
+                changes: {
+                  assigneeAdded: addedUser.name,
+                  message: `${currentUser?.name} assigned ${addedUser.name} to ${existingTicket.ticketNumber}`,
+                },
+              },
+            });
+
+            // Send notification to new assignee
+            if (addedUser.id !== userId) {
+              await tx.notification.create({
+                data: {
+                  userId: addedUser.id,
+                  type: "TICKET_ASSIGNED",
+                  title: "New Ticket Assigned",
+                  message: `You have been assigned to ticket ${existingTicket.ticketNumber}: ${existingTicket.title}`,
+                  link: `/tickets/${ticketId}`,
+                },
+              });
+            }
+          }
+        }
+
+        // Update ticket
+        await tx.workItem.update({
+          where: { id: ticketId },
+          data: {
+            assignmentMode: newAssigneeIds.length > 0 ? "individuals" : null,
+            // Clear team when assigning individuals
+            teamId: null,
+            // Update legacy assigneeId to first assignee for backward compatibility
+            assigneeId: newAssigneeIds.length > 0 ? newAssigneeIds[0] : null,
+            // Update status if needed
+            status:
+              newAssigneeIds.length > 0 && existingTicket.status === "OPEN"
+                ? "IN_PROGRESS"
+                : existingTicket.status,
+          },
+        });
+      });
+
+      const updatedTicket = await getTicketWithAssignees(ticketId);
+      return NextResponse.json(updatedTicket);
+    }
+
+    // Handle legacy single assignee assignment (backward compatible)
+    if (assigneeId !== undefined) {
+      const newAssigneeId =
+        assigneeId === "" || assigneeId === null ? null : assigneeId;
+
+      await prisma.$transaction(async (tx) => {
         // Get assignee name for activity log
         let newAssigneeName = "Unassigned";
         if (newAssigneeId) {
-          const newAssignee = await prisma.user.findUnique({
+          const newAssignee = await tx.user.findUnique({
             where: { id: newAssigneeId },
             select: { name: true },
           });
           newAssigneeName = newAssignee?.name || "Unknown User";
         }
 
-        changes.assigneeId = {
-          from: existingTicket.assignee?.name || null,
-          to: newAssigneeName !== "Unassigned" ? newAssigneeName : null,
-        };
+        // Clear existing assignees
+        await tx.workItemAssignee.deleteMany({
+          where: { workItemId: ticketId },
+        });
 
-        activityMessages.push(
-          newAssigneeId
-            ? `${currentUser?.name} assigned ${existingTicket.ticketNumber} to ${newAssigneeName}`
-            : `${currentUser?.name} unassigned ${existingTicket.ticketNumber}`
-        );
-
-        // If assigning to a user and ticket is OPEN, update status to IN_PROGRESS
-        if (newAssigneeId && existingTicket.status === "OPEN") {
-          updateData.status = "IN_PROGRESS";
-          changes.status = { from: "OPEN", to: "IN_PROGRESS" };
+        // Add single assignee if provided
+        if (newAssigneeId) {
+          await tx.workItemAssignee.create({
+            data: {
+              workItemId: ticketId,
+              userId: newAssigneeId,
+              assignedBy: userId,
+            },
+          });
         }
-      }
-    }
 
-    // If no changes, return current ticket
-    if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(existingTicket);
-    }
-
-    // Update the ticket
-    const updatedTicket = await prisma.workItem.update({
-      where: { id: ticketId },
-      data: updateData,
-      include: {
-        creator: {
-          select: { id: true, name: true, email: true, avatar: true, role: true },
-        },
-        assignee: {
-          select: { id: true, name: true, email: true, avatar: true, role: true },
-        },
-        team: {
-          select: { id: true, name: true, color: true },
-        },
-        category: {
-          select: { id: true, name: true, color: true, icon: true },
-        },
-      },
-    });
-
-    // Create activity log for assignment changes
-    if (Object.keys(changes).length > 0) {
-      await prisma.activityLog.create({
-        data: {
-          workItemId: ticketId,
-          userId,
-          action: "TICKET_ASSIGNED",
-          changes: {
-            ...changes,
-            message: activityMessages.join("; "),
+        // Update ticket
+        await tx.workItem.update({
+          where: { id: ticketId },
+          data: {
+            assigneeId: newAssigneeId,
+            assignmentMode: newAssigneeId ? "individuals" : null,
+            teamId: null,
+            status:
+              newAssigneeId && existingTicket.status === "OPEN"
+                ? "IN_PROGRESS"
+                : existingTicket.status,
           },
-        },
+        });
+
+        // Create activity log
+        await tx.activityLog.create({
+          data: {
+            workItemId: ticketId,
+            userId,
+            action: "TICKET_ASSIGNED",
+            changes: {
+              assigneeId: {
+                from: existingTicket.assignee?.name || null,
+                to: newAssigneeId ? newAssigneeName : null,
+              },
+              message: newAssigneeId
+                ? `${currentUser?.name} assigned ${existingTicket.ticketNumber} to ${newAssigneeName}`
+                : `${currentUser?.name} unassigned ${existingTicket.ticketNumber}`,
+            },
+          },
+        });
+
+        // Send notification
+        if (newAssigneeId && newAssigneeId !== userId) {
+          await tx.notification.create({
+            data: {
+              userId: newAssigneeId,
+              type: "TICKET_ASSIGNED",
+              title: "New Ticket Assigned",
+              message: `You have been assigned to ticket ${existingTicket.ticketNumber}: ${existingTicket.title}`,
+              link: `/tickets/${ticketId}`,
+            },
+          });
+        }
       });
+
+      const updatedTicket = await getTicketWithAssignees(ticketId);
+      return NextResponse.json(updatedTicket);
     }
 
-    // Create notification for new assignee (if assigned to someone else)
-    if (updateData.assigneeId && updateData.assigneeId !== userId) {
-      await prisma.notification.create({
-        data: {
-          userId: updateData.assigneeId as string,
-          type: "TICKET_ASSIGNED",
-          title: "New Ticket Assigned",
-          message: `You have been assigned to ticket ${existingTicket.ticketNumber}: ${existingTicket.title}`,
-          link: `/tickets/${ticketId}`,
-        },
-      });
-    }
-
-    return NextResponse.json(updatedTicket);
+    // No valid assignment action
+    return NextResponse.json(
+      { error: "No valid assignment action provided" },
+      { status: 400 }
+    );
   } catch (error) {
     console.error("Error updating ticket assignment:", error);
     return NextResponse.json(
@@ -264,4 +428,41 @@ export async function PATCH(
       { status: 500 }
     );
   }
+}
+
+/**
+ * Helper function to fetch ticket with all assignees
+ */
+async function getTicketWithAssignees(ticketId: string) {
+  return prisma.workItem.findUnique({
+    where: { id: ticketId },
+    include: {
+      creator: {
+        select: { id: true, name: true, email: true, avatar: true, role: true },
+      },
+      assignee: {
+        select: { id: true, name: true, email: true, avatar: true, role: true },
+      },
+      team: {
+        select: { id: true, name: true, color: true },
+      },
+      category: {
+        select: { id: true, name: true, color: true, icon: true },
+      },
+      assignees: {
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatar: true,
+              role: true,
+            },
+          },
+        },
+        orderBy: { assignedAt: "asc" },
+      },
+    },
+  });
 }

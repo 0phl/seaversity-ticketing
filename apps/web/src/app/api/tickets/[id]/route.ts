@@ -39,6 +39,21 @@ export async function GET(
         team: {
           select: { id: true, name: true, color: true },
         },
+        // Multi-user assignees
+        assignees: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar: true,
+                role: true,
+              },
+            },
+          },
+          orderBy: { assignedAt: "asc" },
+        },
         comments: {
           where: canViewInternal ? {} : { isInternal: false },
           include: {
