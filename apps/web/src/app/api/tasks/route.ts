@@ -26,6 +26,11 @@ async function generateTaskNumber(): Promise<string> {
 
 /**
  * GET /api/tasks - List all tasks
+ * 
+ * Access Rules:
+ * - ADMIN & MANAGER: Can see all tasks (team-wide visibility for WFH monitoring)
+ * - AGENT: Can see tasks assigned to them or their team
+ * - USER: Can ONLY see tasks specifically assigned to them (for working and logging time)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -42,6 +47,12 @@ export async function GET(request: NextRequest) {
     const priority = searchParams.get("priority");
     const assignedToMe = searchParams.get("assignedToMe") === "true";
 
+    const userRole = session.user.role;
+    const userId = session.user.id;
+    const userTeamId = session.user.teamId;
+    const isManagerOrAdmin = ["MANAGER", "ADMIN"].includes(userRole);
+    const isAgent = userRole === "AGENT";
+
     const where: Record<string, unknown> = {
       type: "TASK",
     };
@@ -54,16 +65,39 @@ export async function GET(request: NextRequest) {
       where.priority = priority;
     }
 
-    // Filter for tasks assigned to current user
-    if (assignedToMe) {
+    // Access control based on role
+    if (isManagerOrAdmin) {
+      // Managers/Admins see all tasks in their team (or all if no team)
+      // This provides WFH visibility for monitoring workload
+      if (assignedToMe) {
+        where.OR = [
+          { assigneeId: userId },
+          { assignees: { some: { userId } } },
+          { teamId: userTeamId },
+        ];
+      } else if (userTeamId) {
+        // Default: show team tasks for manager dashboard visibility
+        where.OR = [
+          { teamId: userTeamId },
+          { assigneeId: userId },
+          { assignees: { some: { userId } } },
+          { creatorId: userId },
+        ];
+      }
+    } else if (isAgent) {
+      // Agents see tasks assigned to them, their team, or tasks they created
       where.OR = [
-        { assigneeId: session.user.id },
-        {
-          assignees: {
-            some: { userId: session.user.id },
-          },
-        },
-        { teamId: session.user.teamId },
+        { assigneeId: userId },
+        { assignees: { some: { userId } } },
+        { creatorId: userId },
+        ...(userTeamId ? [{ teamId: userTeamId, assignmentMode: "team" }] : []),
+      ];
+    } else {
+      // USERs can ONLY see tasks assigned directly to them
+      // This is essential for WFH - they need to see their workload and log time
+      where.OR = [
+        { assigneeId: userId },
+        { assignees: { some: { userId } } },
       ];
     }
 
@@ -120,6 +154,11 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/tasks - Create a new task
+ * 
+ * Permission Model:
+ * - ADMIN & MANAGER: Full permission to create and assign tasks to any team or individual
+ * - AGENT: Can create their own internal tasks (for time logging on proactive work)
+ * - USER: Cannot create tasks (but can be assigned tasks and log time)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -127,6 +166,17 @@ export async function POST(request: NextRequest) {
 
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Check if user can create tasks
+    const userRole = session.user.role;
+    const canCreateTasks = ["ADMIN", "MANAGER", "AGENT"].includes(userRole);
+    
+    if (!canCreateTasks) {
+      return NextResponse.json(
+        { error: "You do not have permission to create tasks. Only Admins, Managers, and Agents can create tasks." },
+        { status: 403 }
+      );
     }
 
     const body = await request.json();

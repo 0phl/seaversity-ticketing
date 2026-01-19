@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { ArrowLeft, ListTodo, Loader2, Paperclip, Users, UserPlus } from "lucide-react";
+import { ArrowLeft, ListTodo, Loader2, Paperclip, Users, UserPlus, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
@@ -123,6 +123,9 @@ export default function NewTaskPage() {
   const categoryId = watch("categoryId");
   const projectId = watch("projectId");
 
+  // Check if user can create tasks (ADMIN, MANAGER, AGENT only)
+  const canCreateTasks = currentUser && ["ADMIN", "MANAGER", "AGENT"].includes(currentUser.role);
+
   // Fetch session to get current user's team
   useEffect(() => {
     async function fetchSession() {
@@ -179,23 +182,30 @@ export default function NewTaskPage() {
     fetchTeams();
   }, []);
 
-  // Fetch agents
+  // Fetch assignable users (includes ALL roles for tasks)
+  // Tasks can be assigned to anyone including USER role for WFH tracking
   useEffect(() => {
-    async function fetchAgents() {
+    async function fetchAssignableUsers() {
+      // Only fetch if user can create tasks
+      if (!currentUser || !["ADMIN", "MANAGER", "AGENT"].includes(currentUser.role)) {
+        setIsLoadingAgents(false);
+        return;
+      }
+      
       try {
-        const res = await fetch("/api/users/agents");
+        const res = await fetch("/api/users/task-assignable");
         if (res.ok) {
           const data = await res.json();
           setAgents(data);
         }
       } catch (error) {
-        console.error("Error fetching agents:", error);
+        console.error("Error fetching assignable users:", error);
       } finally {
         setIsLoadingAgents(false);
       }
     }
-    fetchAgents();
-  }, []);
+    fetchAssignableUsers();
+  }, [currentUser]);
 
   // Convert agents to MultiSelect options
   const agentOptions: MultiSelectOption[] = agents.map((agent) => ({
@@ -342,6 +352,59 @@ export default function NewTaskPage() {
   ];
 
   const isManagerOrAdmin = currentUser?.role === "MANAGER" || currentUser?.role === "ADMIN";
+
+  // Show access denied if user can't create tasks
+  if (currentUser && !canCreateTasks) {
+    return (
+      <div className="max-w-2xl mx-auto space-y-6">
+        <div className="flex items-center gap-4">
+          <Link href="/tasks">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-destructive/10 rounded-lg">
+              <ShieldAlert className="h-5 w-5 text-destructive" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">Access Denied</h1>
+              <p className="text-sm text-muted-foreground">
+                You don&apos;t have permission to create tasks
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Permission Required</CardTitle>
+            <CardDescription>
+              Only Administrators, Managers, and Agents can create tasks.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              If you need to log work time, please ask your manager to assign you a task.
+              Once assigned, you&apos;ll be able to:
+            </p>
+            <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+              <li>View the task in your dashboard</li>
+              <li>Start the timer to track your work</li>
+              <li>Add comments and attachments</li>
+              <li>Update the task status</li>
+            </ul>
+            <Link href="/tasks">
+              <Button variant="outline" className="mt-4">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Tasks
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">

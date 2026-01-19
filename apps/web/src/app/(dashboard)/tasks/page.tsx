@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   Loader2,
   Users,
+  Briefcase,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -122,12 +123,40 @@ const StatusIcon = ({ status }: { status: string }) => {
   }
 };
 
+interface CurrentUser {
+  id: string;
+  role: string;
+  teamId: string | null;
+}
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+
+  // Fetch current user session
+  useEffect(() => {
+    async function fetchSession() {
+      try {
+        const res = await fetch("/api/auth/session");
+        if (res.ok) {
+          const session = await res.json();
+          if (session?.user) {
+            setCurrentUser(session.user);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching session:", error);
+      }
+    }
+    fetchSession();
+  }, []);
+
+  // Check if user can create tasks (ADMIN, MANAGER, AGENT only)
+  const canCreateTasks = currentUser && ["ADMIN", "MANAGER", "AGENT"].includes(currentUser.role);
 
   useEffect(() => {
     async function fetchTasks() {
@@ -184,16 +213,20 @@ export default function TasksPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Tasks</h1>
             <p className="text-sm text-muted-foreground">
-              Manage and track internal work tasks
+              {currentUser?.role === "USER" 
+                ? "Your assigned work tasks" 
+                : "Manage and track internal work tasks"}
             </p>
           </div>
         </div>
-        <Link href="/tasks/new">
-          <Button>
-            <Plus className="mr-2 h-4 w-4" />
-            New Task
-          </Button>
-        </Link>
+        {canCreateTasks && (
+          <Link href="/tasks/new">
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              New Task
+            </Button>
+          </Link>
+        )}
       </div>
 
       {/* Filters */}
@@ -266,15 +299,22 @@ export default function TasksPage() {
               <p className="text-sm text-muted-foreground mt-1">
                 {searchQuery || statusFilter !== "all" || priorityFilter !== "all"
                   ? "Try adjusting your filters"
+                  : currentUser?.role === "USER"
+                  ? "You don't have any assigned tasks yet"
                   : "Create your first task to get started"}
               </p>
-              {!searchQuery && statusFilter === "all" && priorityFilter === "all" && (
+              {!searchQuery && statusFilter === "all" && priorityFilter === "all" && canCreateTasks && (
                 <Link href="/tasks/new" className="mt-4 inline-block">
                   <Button>
                     <Plus className="mr-2 h-4 w-4" />
                     Create Task
                   </Button>
                 </Link>
+              )}
+              {!searchQuery && statusFilter === "all" && priorityFilter === "all" && currentUser?.role === "USER" && (
+                <p className="text-xs text-muted-foreground mt-4">
+                  Contact your manager to have tasks assigned to you.
+                </p>
               )}
             </div>
           ) : (

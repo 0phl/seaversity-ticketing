@@ -100,17 +100,25 @@ export async function GET(
     }
 
     // Check if user has access to this task
-    // Users can see their own tasks or tasks assigned to them
-    // Agents/Managers/Admins can see all tasks
+    // Access rules for tasks (different from tickets):
+    // - ADMIN/MANAGER: Can see all tasks (WFH visibility requirement)
+    // - AGENT: Can see tasks assigned to them, their team, or created by them
+    // - USER: Can see tasks specifically assigned to them (so they can work and log time)
     const isAssignee = (task.assignees || []).some(
       (a) => a.userId === session.user.id
     );
+    const isDirectlyAssigned = task.assigneeId === session.user.id || isAssignee;
+    const isCreator = task.creatorId === session.user.id;
+    const isTeamMember = task.teamId === session.user.teamId;
+
+    // Admins/Managers have full visibility
+    // Agents see their assigned/team/created tasks
+    // Users can ONLY see tasks assigned to them (essential for WFH time logging)
     const hasAccess =
-      canViewInternal ||
-      task.creatorId === session.user.id ||
-      task.assigneeId === session.user.id ||
-      isAssignee ||
-      task.teamId === session.user.teamId;
+      canViewInternal || // ADMIN/MANAGER/AGENT can view
+      isDirectlyAssigned || // Anyone assigned can view
+      (canViewInternal && isTeamMember) || // Agents can see team tasks
+      (canViewInternal && isCreator); // Agents can see tasks they created
 
     if (!hasAccess) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });

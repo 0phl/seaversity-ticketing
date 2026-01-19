@@ -353,7 +353,17 @@ export default function TaskDetailPage() {
     );
   }
 
-  const canChangeStatus = ["AGENT", "MANAGER", "ADMIN"].includes(currentUserRole);
+  // Permission checks
+  const isStaff = ["AGENT", "MANAGER", "ADMIN"].includes(currentUserRole);
+  const isAssigned = task?.assignees?.some((a) => a.userId === currentUserId) || 
+                     task?.assignee?.id === currentUserId;
+  
+  // Users assigned to tasks can change status and use time tracking
+  // This is essential for WFH - they need to track their work
+  const canChangeStatus = isStaff || isAssigned;
+  
+  // Only managers/admins can reassign tasks
+  const canReassign = ["MANAGER", "ADMIN"].includes(currentUserRole);
 
   return (
     <div className="space-y-6">
@@ -520,8 +530,8 @@ export default function TaskDetailPage() {
 
         {/* Sidebar */}
         <div className="space-y-6">
-          {/* Assignment Controls (for AGENT/MANAGER/ADMIN) */}
-          {canChangeStatus && (
+          {/* Assignment Controls (only MANAGER/ADMIN can reassign) */}
+          {canReassign && (
             <TaskAssignmentControls
               taskId={task.id}
               taskNumber={task.taskNumber}
