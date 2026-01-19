@@ -23,8 +23,8 @@ export default async function DashboardLayout({
             <Image
               src="/seaversity-logo.png"
               alt="Seaversity Logo"
-              width={140}
-              height={46}
+              width={110}
+              height={36}
               priority
               className="h-auto w-auto"
             />
