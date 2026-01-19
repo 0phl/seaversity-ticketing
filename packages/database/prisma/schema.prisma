@@ -10,27 +10,370 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User model - Core user entity
-model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String?
-  password      String
-  role          UserRole  @default(STAFF)
-  department    String?
-  avatar        String?
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastLoginAt   DateTime?
+// =============================================================================
+// ENUMS
+// =============================================================================
 
-  // Relations will be added as features are implemented
-  
+enum Role {
+  ADMIN
+  MANAGER
+  AGENT
+  USER
+}
+
+enum WorkItemType {
+  TICKET
+  TASK
+}
+
+enum Status {
+  OPEN
+  IN_PROGRESS
+  ON_HOLD
+  RESOLVED
+  CLOSED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationType {
+  TICKET_ASSIGNED
+  TICKET_UPDATED
+  COMMENT_ADDED
+  MENTION
+  DUE_DATE
+  SLA_BREACH
+  SYSTEM
+}
+
+// =============================================================================
+// CORE MODELS
+// =============================================================================
+
+/// User model - Core user entity for authentication and authorization
+model User {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  name        String
+  password    String
+  role        Role      @default(AGENT)
+  teamId      String?
+  team        Team?     @relation("TeamMembers", fields: [teamId], references: [id])
+  avatar      String?
+  isActive    Boolean   @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  managedTeam        Team?          @relation("TeamManager")
+  assignedWorkItems  WorkItem[]     @relation("AssignedWorkItems")
+  createdWorkItems   WorkItem[]     @relation("CreatedWorkItems")
+  timeLogs           TimeLog[]
+  comments           Comment[]
+  dailySummaries     DailySummary[]
+  notifications      Notification[]
+  activityLogs       ActivityLog[]
+
+  @@index([email])
+  @@index([teamId])
+  @@index([role])
   @@map("users")
 }
 
-enum UserRole {
-  ADMIN
-  MANAGER
-  STAFF
+/// Team model - Groups users for ticket/task assignment and management
+model Team {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?  @db.Text
+  managerId   String?  @unique
+  manager     User?    @relation("TeamManager", fields: [managerId], references: [id])
+  color       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  members    User[]     @relation("TeamMembers")
+  workItems  WorkItem[]
+  projects   Project[]
+  categories Category[]
+
+  @@map("teams")
+}
+
+/// WorkItem model - Polymorphic base for both Tickets and Tasks
+/// Uses type discriminator to differentiate between TICKET and TASK
+model WorkItem {
+  id             String       @id @default(cuid())
+  type           WorkItemType
+  title          String
+  description    String?      @db.Text
+  status         Status       @default(OPEN)
+  priority       Priority     @default(MEDIUM)
+
+  // Assignment
+  assigneeId String?
+  assignee   User?   @relation("AssignedWorkItems", fields: [assigneeId], references: [id])
+
+  // Creator
+  creatorId String
+  creator   User   @relation("CreatedWorkItems", fields: [creatorId], references: [id])
+
+  // Team association
+  teamId String?
+  team   Team?   @relation(fields: [teamId], references: [id])
+
+  // Project association
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id])
+
+  // Category
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
+
+  // Timing
+  dueDate        DateTime?
+  estimatedHours Float?
+  completedAt    DateTime?
+
+  // Timestamps
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  comments     Comment[]
+  attachments  Attachment[]
+  timeLogs     TimeLog[]
+  activityLogs ActivityLog[]
+
+  // Ticket-specific fields
+  ticketNumber  String?    @unique
+  slaPolicyId   String?
+  slaPolicy     SlaPolicy? @relation(fields: [slaPolicyId], references: [id])
+  slaBreachedAt DateTime?
+
+  // Task-specific fields
+  taskNumber String? @unique
+
+  @@index([type, status])
+  @@index([assigneeId])
+  @@index([creatorId])
+  @@index([teamId])
+  @@index([projectId])
+  @@index([categoryId])
+  @@index([createdAt])
+  @@index([dueDate])
+  @@index([priority])
+  @@map("work_items")
+}
+
+/// Project model - Groups related work items together
+model Project {
+  id          String        @id @default(cuid())
+  name        String
+  description String?       @db.Text
+  status      ProjectStatus @default(ACTIVE)
+  teamId      String?
+  team        Team?         @relation(fields: [teamId], references: [id])
+  startDate   DateTime?
+  endDate     DateTime?
+  progress    Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  workItems  WorkItem[]
+  milestones Milestone[]
+
+  @@index([teamId])
+  @@index([status])
+  @@map("projects")
+}
+
+/// Category model - Categorizes work items for organization and filtering
+model Category {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  color       String?
+  icon        String?
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  workItems WorkItem[]
+
+  @@unique([name, teamId])
+  @@index([teamId])
+  @@map("categories")
+}
+
+// =============================================================================
+// SUPPORTING MODELS
+// =============================================================================
+
+/// TimeLog model - Tracks time spent on work items (essential for WFH tracking)
+model TimeLog {
+  id           String    @id @default(cuid())
+  workItemId   String
+  workItem     WorkItem  @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User      @relation(fields: [userId], references: [id])
+  startedAt    DateTime
+  endedAt      DateTime?
+  durationMins Int?
+  notes        String?   @db.Text
+  isRunning    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([workItemId])
+  @@index([startedAt])
+  @@index([isRunning])
+  @@map("time_logs")
+}
+
+/// Comment model - Stores comments/notes on work items
+model Comment {
+  id         String   @id @default(cuid())
+  workItemId String
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  content    String   @db.Text
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([workItemId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("comments")
+}
+
+/// Attachment model - Stores file attachments for work items
+model Attachment {
+  id         String   @id @default(cuid())
+  workItemId String
+  workItem   WorkItem @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  fileName   String
+  fileSize   Int
+  mimeType   String
+  storageKey String
+  uploadedBy String
+  createdAt  DateTime @default(now())
+
+  @@index([workItemId])
+  @@map("attachments")
+}
+
+/// DailySummary model - End-of-day work summaries for WFH tracking
+model DailySummary {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  date        DateTime @db.Date
+  completed   Json     // Array of completed work item IDs
+  inProgress  Json     // Array of in-progress work item IDs
+  blockers    String?  @db.Text
+  notes       String?  @db.Text
+  totalHours  Float?
+  submittedAt DateTime @default(now())
+
+  @@unique([userId, date])
+  @@index([userId])
+  @@index([date])
+  @@map("daily_summaries")
+}
+
+/// SlaPolicy model - Defines SLA rules for tickets
+model SlaPolicy {
+  id             String   @id @default(cuid())
+  name           String
+  priority       Priority
+  responseTime   Int      // Response time in minutes
+  resolutionTime Int      // Resolution time in minutes
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  workItems WorkItem[]
+
+  @@unique([name, priority])
+  @@index([priority])
+  @@index([isActive])
+  @@map("sla_policies")
+}
+
+/// Notification model - User notifications for various events
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id])
+  type      NotificationType
+  title     String
+  message   String           @db.Text
+  link      String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+/// ActivityLog model - Audit trail for all changes (essential for WFH tracking)
+model ActivityLog {
+  id         String    @id @default(cuid())
+  workItemId String?
+  workItem   WorkItem? @relation(fields: [workItemId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id])
+  action     String
+  changes    Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+
+  @@index([workItemId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+/// Milestone model - Project milestones for tracking progress
+model Milestone {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  description String?   @db.Text
+  dueDate     DateTime
+  isCompleted Boolean   @default(false)
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([projectId])
+  @@index([dueDate])
+  @@map("milestones")
 }
