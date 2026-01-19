@@ -1,8 +1,97 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { prisma } from "@seaversity/database";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Ticket, Clock, CheckCircle, Users } from "lucide-react";
+import { Ticket, Clock, CheckCircle, Users, ListTodo } from "lucide-react";
 import { SignOutButton } from "./sign-out-button";
+
+interface DashboardStats {
+  openCount: number;
+  inProgressCount: number;
+  completedTodayCount: number;
+  teamMembersCount: number;
+  breakdown: {
+    openTickets: number;
+    openTasks: number;
+    inProgressTickets: number;
+    inProgressTasks: number;
+  };
+}
+
+async function getDashboardStats(userId: string, userTeamId: string | null, userRole: string): Promise<DashboardStats> {
+  const isManagerOrAdmin = ["MANAGER", "ADMIN"].includes(userRole);
+
+  // Calculate start of today (midnight)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Build base filter for work items assigned to user
+  const assignedToUserFilter = {
+    OR: [
+      { assigneeId: userId },
+      { assignees: { some: { userId } } },
+      ...(userTeamId ? [{ teamId: userTeamId, assignmentMode: "team" }] : []),
+    ],
+  };
+
+  // For managers/admins, show all counts for their team
+  const scopeFilter = isManagerOrAdmin && userTeamId
+    ? { OR: [{ teamId: userTeamId }, ...assignedToUserFilter.OR] }
+    : assignedToUserFilter;
+
+  const [
+    openCount,
+    inProgressCount,
+    completedTodayCount,
+    teamMembersCount,
+    openTickets,
+    openTasks,
+    inProgressTickets,
+    inProgressTasks,
+  ] = await Promise.all([
+    prisma.workItem.count({
+      where: { ...scopeFilter, status: "OPEN" },
+    }),
+    prisma.workItem.count({
+      where: { ...scopeFilter, status: "IN_PROGRESS" },
+    }),
+    prisma.workItem.count({
+      where: {
+        ...scopeFilter,
+        status: { in: ["RESOLVED", "CLOSED"] },
+        completedAt: { gte: today },
+      },
+    }),
+    userTeamId
+      ? prisma.user.count({ where: { teamId: userTeamId, isActive: true } })
+      : Promise.resolve(0),
+    prisma.workItem.count({
+      where: { ...scopeFilter, type: "TICKET", status: "OPEN" },
+    }),
+    prisma.workItem.count({
+      where: { ...scopeFilter, type: "TASK", status: "OPEN" },
+    }),
+    prisma.workItem.count({
+      where: { ...scopeFilter, type: "TICKET", status: "IN_PROGRESS" },
+    }),
+    prisma.workItem.count({
+      where: { ...scopeFilter, type: "TASK", status: "IN_PROGRESS" },
+    }),
+  ]);
+
+  return {
+    openCount,
+    inProgressCount,
+    completedTodayCount,
+    teamMembersCount,
+    breakdown: {
+      openTickets,
+      openTasks,
+      inProgressTickets,
+      inProgressTasks,
+    },
+  };
+}
 
 export default async function DashboardPage() {
   const session = await auth();
@@ -10,6 +99,12 @@ export default async function DashboardPage() {
   if (!session?.user) {
     redirect("/login");
   }
+
+  const stats = await getDashboardStats(
+    session.user.id,
+    session.user.teamId || null,
+    session.user.role
+  );
 
   return (
     <div className="space-y-6">
@@ -30,13 +125,13 @@ export default async function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Open Tickets</CardTitle>
+            <CardTitle className="text-sm font-medium">Open Items</CardTitle>
             <Ticket className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{stats.openCount}</div>
             <p className="text-xs text-muted-foreground">
-              Assigned to you
+              {stats.breakdown.openTickets} tickets, {stats.breakdown.openTasks} tasks
             </p>
           </CardContent>
         </Card>
@@ -47,9 +142,9 @@ export default async function DashboardPage() {
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{stats.inProgressCount}</div>
             <p className="text-xs text-muted-foreground">
-              Active work items
+              {stats.breakdown.inProgressTickets} tickets, {stats.breakdown.inProgressTasks} tasks
             </p>
           </CardContent>
         </Card>
@@ -60,9 +155,9 @@ export default async function DashboardPage() {
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{stats.completedTodayCount}</div>
             <p className="text-xs text-muted-foreground">
-              Tasks finished
+              Work items finished
             </p>
           </CardContent>
         </Card>
@@ -73,9 +168,9 @@ export default async function DashboardPage() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">{stats.teamMembersCount}</div>
             <p className="text-xs text-muted-foreground">
-              Online now
+              Active in your team
             </p>
           </CardContent>
         </Card>
