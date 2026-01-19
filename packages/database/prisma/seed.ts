@@ -10,7 +10,11 @@ async function hashPassword(password: string): Promise<string> {
 async function main() {
   console.log("🌱 Seeding database...");
 
-  // Create default admin user
+  // ==========================================================================
+  // CREATE TEST USERS (4 Roles)
+  // ==========================================================================
+
+  // 1. ADMIN - System Administrator with full control
   const adminPassword = await hashPassword("admin123");
   const admin = await prisma.user.upsert({
     where: { email: "admin@seaversity.edu" },
@@ -23,22 +27,94 @@ async function main() {
       isActive: true,
     },
   });
-  console.log(`✅ Created admin user: ${admin.email}`);
+  console.log(`✅ Created ADMIN user: ${admin.email}`);
 
-  // Create test agent user
+  // 2. MANAGER - Team lead who monitors WFH activity and team performance
+  const managerPassword = await hashPassword("manager123");
+  const manager = await prisma.user.upsert({
+    where: { email: "manager@seaversity.edu" },
+    update: {},
+    create: {
+      email: "manager@seaversity.edu",
+      name: "IT Team Manager",
+      password: managerPassword,
+      role: "MANAGER",
+      isActive: true,
+    },
+  });
+  console.log(`✅ Created MANAGER user: ${manager.email}`);
+
+  // 3. AGENT - IT Support who resolves tickets and tracks time
   const agentPassword = await hashPassword("agent123");
   const agent = await prisma.user.upsert({
     where: { email: "agent@seaversity.edu" },
     update: {},
     create: {
       email: "agent@seaversity.edu",
-      name: "Test Agent",
+      name: "IT Support Agent",
       password: agentPassword,
       role: "AGENT",
       isActive: true,
     },
   });
-  console.log(`✅ Created agent user: ${agent.email}`);
+  console.log(`✅ Created AGENT user: ${agent.email}`);
+
+  // 4. USER - Standard employee (LMS Team) who submits tickets
+  const userPassword = await hashPassword("user123");
+  const user = await prisma.user.upsert({
+    where: { email: "user@seaversity.edu" },
+    update: {},
+    create: {
+      email: "user@seaversity.edu",
+      name: "LMS Team Member",
+      password: userPassword,
+      role: "USER",
+      isActive: true,
+    },
+  });
+  console.log(`✅ Created USER user: ${user.email}`);
+
+  // ==========================================================================
+  // CREATE TEAMS
+  // ==========================================================================
+
+  // IT Support Team
+  const itTeam = await prisma.team.upsert({
+    where: { name: "IT Support Team" },
+    update: {},
+    create: {
+      name: "IT Support Team",
+      description: "Handles all IT support tickets and technical issues",
+      color: "#0099FF", // Seaversity Blue
+      managerId: manager.id,
+    },
+  });
+  console.log(`✅ Created team: ${itTeam.name}`);
+
+  // LMS Team
+  const lmsTeam = await prisma.team.upsert({
+    where: { name: "LMS Team" },
+    update: {},
+    create: {
+      name: "LMS Team",
+      description: "Learning Management System team",
+      color: "#10B981", // Green
+    },
+  });
+  console.log(`✅ Created team: ${lmsTeam.name}`);
+
+  // Assign users to teams
+  await prisma.user.update({
+    where: { id: agent.id },
+    data: { teamId: itTeam.id },
+  });
+  console.log(`✅ Assigned ${agent.name} to ${itTeam.name}`);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { teamId: lmsTeam.id },
+  });
+  console.log(`✅ Assigned ${user.name} to ${lmsTeam.name}`);
 
   // Create default SLA policies
   const slaPolicyData = [
@@ -92,11 +168,30 @@ async function main() {
   }
   console.log(`✅ Created ${categoryData.length} categories`);
 
+  console.log("");
   console.log("🎉 Seeding completed!");
   console.log("");
-  console.log("📝 Test credentials:");
-  console.log("   Admin: admin@seaversity.edu / admin123");
-  console.log("   Agent: agent@seaversity.edu / agent123");
+  console.log("═══════════════════════════════════════════════════════════════");
+  console.log("📝 TEST CREDENTIALS");
+  console.log("═══════════════════════════════════════════════════════════════");
+  console.log("");
+  console.log("  ADMIN (Full system control):");
+  console.log("    Email:    admin@seaversity.edu");
+  console.log("    Password: admin123");
+  console.log("");
+  console.log("  MANAGER (Team oversight & reports):");
+  console.log("    Email:    manager@seaversity.edu");
+  console.log("    Password: manager123");
+  console.log("");
+  console.log("  AGENT (Ticket handling & time tracking):");
+  console.log("    Email:    agent@seaversity.edu");
+  console.log("    Password: agent123");
+  console.log("");
+  console.log("  USER (Submit tickets & view own requests):");
+  console.log("    Email:    user@seaversity.edu");
+  console.log("    Password: user123");
+  console.log("");
+  console.log("═══════════════════════════════════════════════════════════════");
 }
 
 main()
