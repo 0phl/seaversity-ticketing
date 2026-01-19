@@ -1,7 +1,12 @@
+import "dotenv/config";
 import { Worker, Queue } from "bullmq";
 import IORedis from "ioredis";
 
-const connection = new IORedis(process.env.REDIS_URL || "redis://localhost:6379", {
+// Load REDIS_URL from environment (with password)
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+console.log("Connecting to Redis...");
+
+const connection = new IORedis(redisUrl, {
   maxRetriesPerRequest: null,
 });
 

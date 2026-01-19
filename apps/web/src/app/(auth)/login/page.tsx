@@ -71,10 +71,14 @@ export default function LoginPage() {
         return;
       }
 
-      // Successful login - redirect to callback URL
-      router.push(callbackUrl);
-      router.refresh();
+      if (result?.ok) {
+        // Successful login - redirect to callback URL
+        // Use window.location for a clean redirect to avoid router issues
+        window.location.href = callbackUrl;
+        return;
+      }
     } catch (error) {
+      console.error("Login error:", error);
       setLoginError("An unexpected error occurred. Please try again.");
       setIsLoading(false);
     }
