@@ -1,6 +1,11 @@
 import type { NextAuthConfig } from "next-auth";
 
 /**
+ * Protected routes that require authentication
+ */
+const protectedRoutes = ["/dashboard", "/tickets", "/tasks", "/projects", "/settings", "/reports"];
+
+/**
  * Auth configuration for edge runtime (middleware)
  * This config doesn't include bcrypt or Prisma (not edge-compatible)
  */
@@ -12,11 +17,14 @@ export const authConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
-      const isOnDashboard = nextUrl.pathname.startsWith("/dashboard");
-      const isOnAuth = nextUrl.pathname.startsWith("/login") || 
-                       nextUrl.pathname.startsWith("/register");
+      const isProtectedRoute = protectedRoutes.some((route) =>
+        nextUrl.pathname.startsWith(route)
+      );
+      const isOnAuth =
+        nextUrl.pathname.startsWith("/login") ||
+        nextUrl.pathname.startsWith("/register");
 
-      if (isOnDashboard) {
+      if (isProtectedRoute) {
         if (isLoggedIn) return true;
         return false; // Redirect unauthenticated users to login page
       }
