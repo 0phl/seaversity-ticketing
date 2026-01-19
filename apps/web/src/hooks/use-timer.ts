@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useCallback, useRef } from "react";
-import { useTimerStore, type ActiveTimer } from "@/stores/timer-store";
+import { useEffect, useCallback, useState } from "react";
+import { useTimerStore, calculateElapsedSeconds, type ActiveTimer } from "@/stores/timer-store";
 
 interface WorkItem {
   id: string;
@@ -29,25 +29,14 @@ interface TimeLogResponse {
 export function useTimer() {
   const {
     activeTimer,
-    elapsedSeconds,
     isLoading,
     setActiveTimer,
-    setElapsedSeconds,
-    incrementElapsed,
     setLoading,
     clearTimer,
   } = useTimerStore();
 
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  /**
-   * Calculate elapsed seconds from startedAt time
-   */
-  const calculateElapsed = useCallback((startedAt: string): number => {
-    const start = new Date(startedAt).getTime();
-    const now = Date.now();
-    return Math.floor((now - start) / 1000);
-  }, []);
+  // Local state for elapsed seconds - calculated from startedAt
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   /**
    * Fetch the active timer from the server
@@ -74,7 +63,6 @@ export function useTimer() {
           userId: data.userId,
         };
         setActiveTimer(timer);
-        setElapsedSeconds(calculateElapsed(data.startedAt));
       } else {
         clearTimer();
       }
@@ -83,7 +71,7 @@ export function useTimer() {
     } finally {
       setLoading(false);
     }
-  }, [setLoading, setActiveTimer, setElapsedSeconds, calculateElapsed, clearTimer]);
+  }, [setLoading, setActiveTimer, clearTimer]);
 
   /**
    * Start a timer for a work item
@@ -117,7 +105,6 @@ export function useTimer() {
         };
 
         setActiveTimer(timer);
-        setElapsedSeconds(0);
         return true;
       } catch (error) {
         console.error("Error starting timer:", error);
@@ -126,7 +113,7 @@ export function useTimer() {
         setLoading(false);
       }
     },
-    [setLoading, setActiveTimer, setElapsedSeconds]
+    [setLoading, setActiveTimer]
   );
 
   /**
@@ -171,40 +158,28 @@ export function useTimer() {
     [activeTimer]
   );
 
-  // Set up the interval to increment elapsed time
+  // Set up interval to update elapsed seconds based on startedAt
   useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+
     if (activeTimer) {
-      // Clear any existing interval
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
+      // Calculate initial elapsed time immediately
+      setElapsedSeconds(calculateElapsedSeconds(activeTimer.startedAt));
 
-      // Start new interval
-      intervalRef.current = setInterval(() => {
-        incrementElapsed();
+      // Update every second by recalculating from startedAt
+      intervalId = setInterval(() => {
+        setElapsedSeconds(calculateElapsedSeconds(activeTimer.startedAt));
       }, 1000);
-
-      // Calculate initial elapsed time
-      setElapsedSeconds(calculateElapsed(activeTimer.startedAt));
     } else {
-      // Clear interval when no active timer
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      setElapsedSeconds(0);
     }
 
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
+      if (intervalId) {
+        clearInterval(intervalId);
       }
     };
-  }, [activeTimer, incrementElapsed, setElapsedSeconds, calculateElapsed]);
-
-  // Fetch active timer on mount
-  useEffect(() => {
-    fetchActiveTimer();
-  }, [fetchActiveTimer]);
+  }, [activeTimer]);
 
   return {
     activeTimer,

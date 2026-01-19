@@ -13,27 +13,30 @@ export interface ActiveTimer {
 
 interface TimerState {
   activeTimer: ActiveTimer | null;
-  elapsedSeconds: number;
   isLoading: boolean;
+  intervalId: NodeJS.Timeout | null;
   setActiveTimer: (timer: ActiveTimer | null) => void;
-  setElapsedSeconds: (seconds: number) => void;
-  incrementElapsed: () => void;
   setLoading: (loading: boolean) => void;
   clearTimer: () => void;
+  setIntervalId: (id: NodeJS.Timeout | null) => void;
 }
 
 export const useTimerStore = create<TimerState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       activeTimer: null,
-      elapsedSeconds: 0,
       isLoading: false,
+      intervalId: null,
       setActiveTimer: (timer) => set({ activeTimer: timer }),
-      setElapsedSeconds: (seconds) => set({ elapsedSeconds: seconds }),
-      incrementElapsed: () =>
-        set((state) => ({ elapsedSeconds: state.elapsedSeconds + 1 })),
       setLoading: (loading) => set({ isLoading: loading }),
-      clearTimer: () => set({ activeTimer: null, elapsedSeconds: 0 }),
+      clearTimer: () => {
+        const { intervalId } = get();
+        if (intervalId) {
+          clearInterval(intervalId);
+        }
+        set({ activeTimer: null, intervalId: null });
+      },
+      setIntervalId: (id) => set({ intervalId: id }),
     }),
     {
       name: "seaversity-timer-storage",
@@ -43,6 +46,16 @@ export const useTimerStore = create<TimerState>()(
     }
   )
 );
+
+/**
+ * Calculate elapsed seconds from startedAt time
+ * This should be used instead of storing elapsed in state
+ */
+export function calculateElapsedSeconds(startedAt: string): number {
+  const start = new Date(startedAt).getTime();
+  const now = Date.now();
+  return Math.floor((now - start) / 1000);
+}
 
 /**
  * Format seconds to HH:MM:SS display
