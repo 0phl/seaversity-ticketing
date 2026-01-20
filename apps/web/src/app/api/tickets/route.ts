@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@seaversity/database";
 import { createTicketSchema } from "@/lib/validations/ticket";
+import { getAutoAssignTeamForTicket } from "@/lib/team-utils";
 
 /**
  * Generate the next ticket number in format T-XXXX
@@ -118,6 +119,12 @@ export async function POST(request: NextRequest) {
     // Generate unique ticket number
     const ticketNumber = await generateTicketNumber();
 
+    // Auto-assign team based on creator's role:
+    // - USER creates ticket → assign to IT Support Team
+    // - AGENT creates ticket → assign to LMS Team  
+    // - MANAGER/ADMIN creates → leave unassigned for manual assignment
+    const autoAssignedTeamId = await getAutoAssignTeamForTicket(session.user.role);
+
     // Create the ticket
     const ticket = await prisma.workItem.create({
       data: {
@@ -131,7 +138,7 @@ export async function POST(request: NextRequest) {
         categoryId: categoryId || null,
         assigneeId: assigneeId || null,
         dueDate: dueDate ? new Date(dueDate) : null,
-        teamId: session.user.teamId || null,
+        teamId: autoAssignedTeamId,
       },
       include: {
         creator: {
@@ -141,6 +148,9 @@ export async function POST(request: NextRequest) {
           select: { id: true, name: true, email: true },
         },
         category: {
+          select: { id: true, name: true, color: true },
+        },
+        team: {
           select: { id: true, name: true, color: true },
         },
       },
@@ -157,6 +167,7 @@ export async function POST(request: NextRequest) {
           title,
           priority,
           status: "OPEN",
+          autoAssignedTeamId: autoAssignedTeamId || "unassigned",
         },
       },
     });
