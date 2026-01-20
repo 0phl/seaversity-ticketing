@@ -8,7 +8,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "dev": "email dev",
+    "dev": "email dev --port 3002",
     "build": "tsc",
     "type-check": "tsc --noEmit"
   },
