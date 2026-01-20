@@ -4,10 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Ticket,
   CheckCircle,
-  AlertCircle,
-  TrendingUp,
   Clock,
   ShieldCheck,
+  ClipboardList,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,11 +17,27 @@ interface ManagerStats {
     totalOpen: number;
     totalInProgress: number;
   };
+  taskStats: {
+    openToday: number;
+    resolvedToday: number;
+    totalOpen: number;
+    totalInProgress: number;
+  };
+  combinedStats: {
+    totalOpen: number;
+    totalInProgress: number;
+    openToday: number;
+    resolvedToday: number;
+  };
   slaCompliance: number;
   teamWorkload: {
     teamId: string;
     teamName: string;
     teamColor: string;
+    ticketsOpen: number;
+    ticketsInProgress: number;
+    tasksOpen: number;
+    tasksInProgress: number;
     open: number;
     inProgress: number;
     resolvedToday: number;
@@ -56,7 +71,7 @@ function StatCard({
   icon: React.ComponentType<{ className?: string }>;
   trend?: "up" | "down" | "neutral";
   trendLabel?: string;
-  variant?: "default" | "success" | "warning" | "danger";
+  variant?: "default" | "success" | "warning" | "danger" | "info";
   isLoading?: boolean;
 }) {
   const variantColors = {
@@ -64,6 +79,7 @@ function StatCard({
     success: "text-green-600",
     warning: "text-amber-500",
     danger: "text-red-500",
+    info: "text-blue-500",
   };
 
   if (isLoading) {
@@ -116,32 +132,33 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
     (stats?.slaCompliance || 0) >= 90
       ? "success"
       : (stats?.slaCompliance || 0) >= 75
-      ? "warning"
-      : "danger";
+        ? "warning"
+        : "danger";
 
-  // Calculate total workload across teams
-  const totalWorkload = stats?.teamWorkload.reduce(
-    (acc, team) => ({
-      open: acc.open + team.open,
-      inProgress: acc.inProgress + team.inProgress,
-      resolvedToday: acc.resolvedToday + team.resolvedToday,
-    }),
-    { open: 0, inProgress: 0, resolvedToday: 0 }
-  ) || { open: 0, inProgress: 0, resolvedToday: 0 };
+  // Use combined stats for main cards
+  const combinedOpen = stats?.combinedStats?.totalOpen || 0;
+  const combinedInProgress = stats?.combinedStats?.totalInProgress || 0;
+  const combinedOpenToday = stats?.combinedStats?.openToday || 0;
+  const combinedResolvedToday = stats?.combinedStats?.resolvedToday || 0;
+
+  // Task-specific stats
+  const totalTasks =
+    (stats?.taskStats?.totalOpen || 0) +
+    (stats?.taskStats?.totalInProgress || 0);
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
       <StatCard
-        title="Open Tickets"
-        value={stats?.ticketStats.totalOpen || 0}
-        subtitle="Total unresolved"
+        title="Open Work Items"
+        value={combinedOpen}
+        subtitle="Tickets + Tasks"
         icon={Ticket}
         variant="default"
         isLoading={isLoading}
       />
       <StatCard
         title="In Progress"
-        value={stats?.ticketStats.totalInProgress || 0}
+        value={combinedInProgress}
         subtitle="Being worked on"
         icon={Clock}
         variant="warning"
@@ -149,22 +166,24 @@ export function StatsCards({ stats, isLoading }: StatsCardsProps) {
       />
       <StatCard
         title="Resolved Today"
-        value={stats?.ticketStats.resolvedToday || 0}
-        subtitle={`${stats?.ticketStats.openToday || 0} new today`}
+        value={combinedResolvedToday}
+        subtitle={`${combinedOpenToday} new today`}
         icon={CheckCircle}
         variant="success"
-        trend={
-          (stats?.ticketStats.resolvedToday || 0) >=
-          (stats?.ticketStats.openToday || 0)
-            ? "up"
-            : "down"
-        }
+        trend={combinedResolvedToday >= combinedOpenToday ? "up" : "down"}
         trendLabel={
-          (stats?.ticketStats.resolvedToday || 0) >=
-          (stats?.ticketStats.openToday || 0)
+          combinedResolvedToday >= combinedOpenToday
             ? "Positive flow"
             : "Backlog growing"
         }
+        isLoading={isLoading}
+      />
+      <StatCard
+        title="Total Tasks"
+        value={totalTasks}
+        subtitle={`${stats?.taskStats?.totalOpen || 0} open, ${stats?.taskStats?.totalInProgress || 0} in progress`}
+        icon={ClipboardList}
+        variant="info"
         isLoading={isLoading}
       />
       <StatCard

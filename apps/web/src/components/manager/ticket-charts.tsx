@@ -24,11 +24,27 @@ interface ManagerStats {
     totalOpen: number;
     totalInProgress: number;
   };
+  taskStats: {
+    openToday: number;
+    resolvedToday: number;
+    totalOpen: number;
+    totalInProgress: number;
+  };
+  combinedStats: {
+    totalOpen: number;
+    totalInProgress: number;
+    openToday: number;
+    resolvedToday: number;
+  };
   slaCompliance: number;
   teamWorkload: {
     teamId: string;
     teamName: string;
     teamColor: string;
+    ticketsOpen: number;
+    ticketsInProgress: number;
+    tasksOpen: number;
+    tasksInProgress: number;
     open: number;
     inProgress: number;
     resolvedToday: number;
@@ -54,9 +70,8 @@ const COLORS = {
   warning: "#F59E0B",
   danger: "#EF4444",
   muted: "#6B7280",
+  task: "#8B5CF6", // Purple for tasks
 };
-
-const TEAM_COLORS = ["#0099FF", "#0080DD", "#10B981", "#F59E0B", "#8B5CF6"];
 
 export function TicketCharts({ stats, isLoading }: TicketChartsProps) {
   if (isLoading) {
@@ -64,7 +79,7 @@ export function TicketCharts({ stats, isLoading }: TicketChartsProps) {
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Ticket Flow Today</CardTitle>
+            <CardTitle>Work Items Today</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="h-[250px] bg-muted animate-pulse rounded" />
@@ -82,26 +97,26 @@ export function TicketCharts({ stats, isLoading }: TicketChartsProps) {
     );
   }
 
-  // Prepare data for pie chart (Open vs Resolved today)
+  // Prepare data for pie chart (Open vs Resolved today - combined)
   const ticketFlowData = [
     {
       name: "Open Today",
-      value: stats?.ticketStats.openToday || 0,
+      value: stats?.combinedStats?.openToday || 0,
       color: COLORS.warning,
     },
     {
       name: "Resolved Today",
-      value: stats?.ticketStats.resolvedToday || 0,
+      value: stats?.combinedStats?.resolvedToday || 0,
       color: COLORS.success,
     },
   ];
 
-  // Prepare team workload data for bar chart
+  // Prepare team workload data for stacked bar chart (Tickets vs Tasks)
   const workloadData =
     stats?.teamWorkload.map((team) => ({
       name: team.teamName,
-      open: team.open,
-      inProgress: team.inProgress,
+      tickets: team.ticketsOpen + team.ticketsInProgress,
+      tasks: team.tasksOpen + team.tasksInProgress,
       resolved: team.resolvedToday,
     })) || [];
 
@@ -110,7 +125,7 @@ export function TicketCharts({ stats, isLoading }: TicketChartsProps) {
 
   return (
     <div className="grid gap-6 md:grid-cols-2">
-      {/* Today's Ticket Flow - Pie Chart */}
+      {/* Today's Work Item Flow - Pie Chart */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Open vs Resolved Today</CardTitle>
@@ -118,7 +133,7 @@ export function TicketCharts({ stats, isLoading }: TicketChartsProps) {
         <CardContent>
           {ticketFlowData[0].value === 0 && ticketFlowData[1].value === 0 ? (
             <div className="h-[250px] flex items-center justify-center text-muted-foreground">
-              No ticket activity today yet
+              No work item activity today yet
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={250}>
@@ -152,10 +167,12 @@ export function TicketCharts({ stats, isLoading }: TicketChartsProps) {
         </CardContent>
       </Card>
 
-      {/* Team Workload Distribution - Bar Chart */}
+      {/* Team Workload Distribution - Stacked Bar Chart (Tickets vs Tasks) */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Team Workload Distribution</CardTitle>
+          <CardTitle className="text-base">
+            Team Workload (Tickets vs Tasks)
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {workloadData.length === 0 ? (
@@ -184,17 +201,17 @@ export function TicketCharts({ stats, isLoading }: TicketChartsProps) {
                   }}
                 />
                 <Legend />
-                <Bar dataKey="open" name="Open" fill={COLORS.warning} stackId="a" />
                 <Bar
-                  dataKey="inProgress"
-                  name="In Progress"
+                  dataKey="tickets"
+                  name="Tickets"
                   fill={COLORS.primary}
-                  stackId="a"
+                  stackId="workload"
                 />
                 <Bar
-                  dataKey="resolved"
-                  name="Resolved Today"
-                  fill={COLORS.success}
+                  dataKey="tasks"
+                  name="Tasks"
+                  fill={COLORS.task}
+                  stackId="workload"
                 />
               </BarChart>
             </ResponsiveContainer>
@@ -205,7 +222,7 @@ export function TicketCharts({ stats, isLoading }: TicketChartsProps) {
       {/* Hourly Activity - Line Chart (Full Width) */}
       <Card className="md:col-span-2">
         <CardHeader>
-          <CardTitle className="text-base">Hourly Ticket Activity</CardTitle>
+          <CardTitle className="text-base">Hourly Activity (Tickets & Tasks)</CardTitle>
         </CardHeader>
         <CardContent>
           {hourlyData.length === 0 ? (

@@ -29,7 +29,7 @@ export async function GET() {
     const teams = await prisma.team.findMany({
       where: {
         name: {
-          in: ["IT", "LMS", "IT Team", "LMS Team"],
+          in: ["IT", "LMS", "IT Team", "LMS Team", "IT Support Team"],
         },
       },
       include: {
@@ -92,18 +92,16 @@ export async function GET() {
     // Calculate hours per user
     const userHours: Record<string, number> = {};
     todayTimeLogs.forEach((log) => {
-      if (!userHours[log.userId]) {
-        userHours[log.userId] = 0;
-      }
+      const currentHours = userHours[log.userId] ?? 0;
       if (log.durationMins) {
-        userHours[log.userId] += log.durationMins;
+        userHours[log.userId] = currentHours + log.durationMins;
       } else if (log.isRunning) {
         // Calculate running time in minutes
         const now = new Date();
         const elapsed = Math.floor(
           (now.getTime() - new Date(log.startedAt).getTime()) / 60000
         );
-        userHours[log.userId] += elapsed;
+        userHours[log.userId] = currentHours + elapsed;
       }
     });
 

@@ -44,11 +44,29 @@ interface ManagerStats {
     totalOpen: number;
     totalInProgress: number;
   };
+  taskStats: {
+    openToday: number;
+    resolvedToday: number;
+    totalOpen: number;
+    totalInProgress: number;
+  };
+  combinedStats: {
+    totalOpen: number;
+    totalInProgress: number;
+    openToday: number;
+    resolvedToday: number;
+  };
   slaCompliance: number;
   teamWorkload: {
     teamId: string;
     teamName: string;
     teamColor: string;
+    // Stacked bar data
+    ticketsOpen: number;
+    ticketsInProgress: number;
+    tasksOpen: number;
+    tasksInProgress: number;
+    // Legacy combined fields
     open: number;
     inProgress: number;
     resolvedToday: number;

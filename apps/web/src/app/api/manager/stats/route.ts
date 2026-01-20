@@ -4,7 +4,7 @@ import { prisma } from "@seaversity/database";
 
 /**
  * GET /api/manager/stats - Get dashboard statistics
- * Returns ticket counts, SLA compliance, and team workload
+ * Returns combined ticket + task counts, SLA compliance, and team workload
  */
 export async function GET() {
   try {
@@ -25,7 +25,7 @@ export async function GET() {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Fetch ticket counts for today
+    // Fetch ticket counts
     const [
       openTicketsToday,
       resolvedTicketsToday,
@@ -82,20 +82,59 @@ export async function GET() {
       }),
     ]);
 
+    // Fetch task counts
+    const [
+      openTasksToday,
+      resolvedTasksToday,
+      totalOpenTasks,
+      totalInProgressTasks,
+    ] = await Promise.all([
+      // Open tasks created today
+      prisma.workItem.count({
+        where: {
+          type: "TASK",
+          createdAt: { gte: today, lt: tomorrow },
+          status: { in: ["OPEN", "IN_PROGRESS", "ON_HOLD"] },
+        },
+      }),
+      // Resolved tasks today
+      prisma.workItem.count({
+        where: {
+          type: "TASK",
+          completedAt: { gte: today, lt: tomorrow },
+          status: { in: ["RESOLVED", "CLOSED"] },
+        },
+      }),
+      // Total open tasks
+      prisma.workItem.count({
+        where: {
+          type: "TASK",
+          status: { in: ["OPEN"] },
+        },
+      }),
+      // Total in-progress tasks
+      prisma.workItem.count({
+        where: {
+          type: "TASK",
+          status: { in: ["IN_PROGRESS"] },
+        },
+      }),
+    ]);
+
     // Calculate SLA compliance percentage
     const slaCompliance =
       totalTicketsWithSla > 0
         ? Math.round(
-            ((totalTicketsWithSla - slaBreachedTickets) / totalTicketsWithSla) *
-              100
-          )
+          ((totalTicketsWithSla - slaBreachedTickets) / totalTicketsWithSla) *
+          100
+        )
         : 100;
 
-    // Get team workload distribution
+    // Get team workload distribution with Tickets vs Tasks breakdown
     const teams = await prisma.team.findMany({
       where: {
         name: {
-          in: ["IT", "LMS", "IT Team", "LMS Team"],
+          in: ["IT", "LMS", "IT Team", "LMS Team", "IT Support Team"],
         },
       },
       select: {
@@ -107,44 +146,73 @@ export async function GET() {
 
     const teamWorkload = await Promise.all(
       teams.map(async (team) => {
-        const [openCount, inProgressCount, resolvedTodayCount] =
-          await Promise.all([
-            prisma.workItem.count({
-              where: {
-                type: "TICKET",
-                teamId: team.id,
-                status: "OPEN",
-              },
-            }),
-            prisma.workItem.count({
-              where: {
-                type: "TICKET",
-                teamId: team.id,
-                status: "IN_PROGRESS",
-              },
-            }),
-            prisma.workItem.count({
-              where: {
-                type: "TICKET",
-                teamId: team.id,
-                completedAt: { gte: today, lt: tomorrow },
-              },
-            }),
-          ]);
+        const [
+          ticketsOpen,
+          ticketsInProgress,
+          tasksOpen,
+          tasksInProgress,
+          resolvedTodayCount,
+        ] = await Promise.all([
+          // Tickets - Open
+          prisma.workItem.count({
+            where: {
+              type: "TICKET",
+              teamId: team.id,
+              status: "OPEN",
+            },
+          }),
+          // Tickets - In Progress
+          prisma.workItem.count({
+            where: {
+              type: "TICKET",
+              teamId: team.id,
+              status: "IN_PROGRESS",
+            },
+          }),
+          // Tasks - Open
+          prisma.workItem.count({
+            where: {
+              type: "TASK",
+              teamId: team.id,
+              status: "OPEN",
+            },
+          }),
+          // Tasks - In Progress
+          prisma.workItem.count({
+            where: {
+              type: "TASK",
+              teamId: team.id,
+              status: "IN_PROGRESS",
+            },
+          }),
+          // Resolved today (combined)
+          prisma.workItem.count({
+            where: {
+              teamId: team.id,
+              completedAt: { gte: today, lt: tomorrow },
+            },
+          }),
+        ]);
 
         return {
           teamId: team.id,
           teamName: team.name,
           teamColor: team.color || "#0099FF",
-          open: openCount,
-          inProgress: inProgressCount,
+          // Stacked bar data for Tickets vs Tasks
+          ticketsOpen,
+          ticketsInProgress,
+          tasksOpen,
+          tasksInProgress,
+          // Legacy fields for backward compatibility
+          open: ticketsOpen + tasksOpen,
+          inProgress: ticketsInProgress + tasksInProgress,
           resolvedToday: resolvedTodayCount,
-          total: openCount + inProgressCount,
+          total: ticketsOpen + tasksOpen + ticketsInProgress + tasksInProgress,
         };
       })
     );
 
-    // Get hourly ticket data for today (for chart)
+    // Get hourly ticket + task data for today (for chart)
     const hourlyData = [];
     for (let hour = 0; hour < 24; hour++) {
       const hourStart = new Date(today);
@@ -156,15 +224,15 @@ export async function GET() {
       if (hourStart > new Date()) break;
 
       const [created, resolved] = await Promise.all([
+        // Combined tickets + tasks created
         prisma.workItem.count({
           where: {
-            type: "TICKET",
             createdAt: { gte: hourStart, lt: hourEnd },
           },
         }),
+        // Combined tickets + tasks resolved
         prisma.workItem.count({
           where: {
-            type: "TICKET",
             completedAt: { gte: hourStart, lt: hourEnd },
           },
         }),
@@ -178,11 +246,26 @@ export async function GET() {
     }
 
     return NextResponse.json({
+      // Ticket-only stats (for SLA card)
       ticketStats: {
         openToday: openTicketsToday,
         resolvedToday: resolvedTicketsToday,
         totalOpen: totalOpenTickets,
         totalInProgress: totalInProgressTickets,
+      },
+      // Task-only stats (for Total Tasks card)
+      taskStats: {
+        openToday: openTasksToday,
+        resolvedToday: resolvedTasksToday,
+        totalOpen: totalOpenTasks,
+        totalInProgress: totalInProgressTasks,
+      },
+      // Combined stats (for main cards)
+      combinedStats: {
+        totalOpen: totalOpenTickets + totalOpenTasks,
+        totalInProgress: totalInProgressTickets + totalInProgressTasks,
+        openToday: openTicketsToday + openTasksToday,
+        resolvedToday: resolvedTicketsToday + resolvedTasksToday,
       },
       slaCompliance,
       teamWorkload,
