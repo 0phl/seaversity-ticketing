@@ -7,7 +7,7 @@ import { updateTicketSchema } from "@/lib/validations/ticket";
  * GET /api/tickets/[id] - Get a single ticket with its comments
  */
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -97,12 +97,26 @@ export async function GET(
     }
 
     // Check if user has access to this ticket
-    // Users can see their own tickets or tickets assigned to them
+    // Users can see their own tickets, tickets assigned to them (direct, team, or multi-assignee)
     // Agents/Managers/Admins can see all tickets
+
+    // Check if user is one of the multi-assignees
+    const isMultiAssignee = ticket.assignees.some(
+      (a) => a.user.id === session.user.id
+    );
+
+    // Check if ticket is assigned to user's team
+    const isTeamMember =
+      ticket.teamId &&
+      session.user.teamId &&
+      ticket.teamId === session.user.teamId;
+
     const hasAccess =
       canViewInternal ||
       ticket.creatorId === session.user.id ||
-      ticket.assigneeId === session.user.id;
+      ticket.assigneeId === session.user.id ||
+      isMultiAssignee ||
+      isTeamMember;
 
     if (!hasAccess) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
@@ -145,9 +159,14 @@ export async function PATCH(
       );
     }
 
-    // Find the existing ticket
+    // Find the existing ticket with assignees for access check
     const existingTicket = await prisma.workItem.findUnique({
       where: { id: ticketId, type: "TICKET" },
+      include: {
+        assignees: {
+          select: { userId: true },
+        },
+      },
     });
 
     if (!existingTicket) {
@@ -158,15 +177,22 @@ export async function PATCH(
     const canModify = ["AGENT", "MANAGER", "ADMIN"].includes(session.user.role);
     const isCreator = existingTicket.creatorId === session.user.id;
     const isAssignee = existingTicket.assigneeId === session.user.id;
+    const isMultiAssignee = existingTicket.assignees.some(
+      (a) => a.userId === session.user.id
+    );
+    const isTeamMember =
+      existingTicket.teamId &&
+      session.user.teamId &&
+      existingTicket.teamId === session.user.teamId;
 
-    if (!canModify && !isCreator && !isAssignee) {
+    if (!canModify && !isCreator && !isAssignee && !isMultiAssignee && !isTeamMember) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     const updateData = validatedFields.data;
 
     // Track changes for activity log
-    const changes: Record<string, { from: unknown; to: unknown }> = {};
+    const changes: { [key: string]: { from: string | null; to: string | null } } = {};
 
     if (updateData.title && updateData.title !== existingTicket.title) {
       changes.title = { from: existingTicket.title, to: updateData.title };
@@ -188,8 +214,8 @@ export async function PATCH(
           updateData.status === "RESOLVED" || updateData.status === "CLOSED"
             ? new Date()
             : updateData.status === "OPEN" || updateData.status === "IN_PROGRESS"
-            ? null
-            : undefined,
+              ? null
+              : undefined,
       },
       include: {
         creator: {
